@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+
+# Author: Emma Chalençon
+# Creation date: 06/07/2021
+# Python version 3.8.5
+
 import os 
 from os import path
 import shutil
@@ -11,7 +17,7 @@ target_folder = "D:/Emma/FLARES/Image_processing/Sentinel2_imagery/"
 
 ## Download one image in particular
 
-record_id = "LC08_L1TP_207024_20210530_20210608_01_T1"
+record_id = "S2B_MSIL2A_20210701T113319_N0301_R080_T29UPV_20210701T132705"
 print("Will download {"+ record_id+"} to {"+target_folder+"}")
 if not path.exists(target_folder+record_id):
     downloader.download_by_id(record_id, target_folder)
