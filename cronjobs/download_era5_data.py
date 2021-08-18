@@ -103,6 +103,33 @@ def _calc_time_difference(start_date):
     return difference
 
 
+def _check_attrs(ds):
+    """
+    Checks for each of the data variables in the Dataset, if any of the original attributes is missing. If so, adds
+    the attributes again
+    """
+
+    attrs_dict = {  # dictionary containing the attribute information to add per variable
+        'u10':  # variable name
+            {'units': 'm s**-1', 'long_name': '10 metre U wind component'},  # attributes
+        'v10':
+            {'units': 'm s**-1', 'long_name': '10 metre V wind component'},
+        'tp':
+            {'units': 'm', 'long_name': 'Total precipitation'},
+        't2m':
+            {'units': 'K', 'long_name': '2 metre temperature'},
+    }
+
+    for var in list(ds.data_vars):  # loop through the data variables
+        if 'units' not in ds[var].attrs.keys():  # if the attribute is not present, add it
+            ds[var].attrs['units'] = attrs_dict[var]['units']
+
+        if 'long_name' not in ds[var].attrs.keys():
+            ds[var].attrs['long_name'] = attrs_dict[var]['long_name']
+
+    return ds
+
+
 def _calc_download_periods(last_date, hour_interval=1226):
     """
     The CDS api allows up to 5000 fields per request. In case the difference in hours is over 5000 the download must
@@ -298,6 +325,8 @@ def main():
 
         # combine the datasets into single dataset
         updated_dataset = xr.combine_nested(all_data, concat_dim="time")
+        # check the attribute information
+        updated_dataset = _check_attrs(updated_dataset)
 
         # Write the backup file & updated file as netcdf files
         existing_pollutant_dataset_cp.to_netcdf(f"{DATA_DIR_ERA5}/temp/{dataset_name}_backup.nc")
