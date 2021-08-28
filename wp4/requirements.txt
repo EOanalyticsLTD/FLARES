@@ -1,0 +1,16 @@
+xarray
+netcdf4
+numpy
+geopandas
+pandas
+cartopy
+metpy
+psycopg2
+jupyter
+Pillow
+scikit-learn
+matplotlib
+plotly
+boto3
+cdsapi
+ecmwf-api-client
