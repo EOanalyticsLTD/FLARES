@@ -246,7 +246,7 @@ def _combine_datasets(ds_features: xr.Dataset, df_lc_info: pd.DataFrame) -> pd.D
     df_combined = df_lc_info.join(df_features)  # join the dataframes to create a dataframe containing all the info
 
     if 'quantile' in df_combined.columns:  # remove unwanted column from the dataframe
-        df_combined = df_combined.drop(['quantile'], 1)
+        df_combined = df_combined.drop(columns=['quantile'])
 
     return df_combined
 
@@ -563,7 +563,7 @@ def get_spatial_baseline(fe_lat: float,
     df_baseline: pandas dataframe containing all the baseline information,
     ds_fe: xArray dataset containing all the feature information generated from the meteo data for the NN search,
     nn_result: pandas dataframe containing the result from the NN search and all the information for each match,
-    df_fe_information pandas dataframe containing all the information of the target pixel of the NN search :
+    df_fe_information: pandas dataframe containing all the information of the target pixel of the NN search
     """
 
     # Next, derive the spatial baseline for the pixels returned by the nearest neighbour search
@@ -588,7 +588,7 @@ def get_spatial_baseline(fe_lat: float,
         meteo_dataset=meteo_dataset
     )
 
-    df_classification = df_classification.drop(['longitude', 'latitude'], 1).dropna().reset_index()
+    df_classification = df_classification.drop(columns=['longitude', 'latitude']).dropna().reset_index()
 
     # filter out unwanted rows based on the parameters set by the user
     df_classification = _filter_dataset(df_classification, min_distance_km, max_distance_km, upwind_downwind,
@@ -656,7 +656,7 @@ def get_spatial_baseline(fe_lat: float,
 
         pixel_data_l += [df_pixel_data]  # add to the list of dataframes
 
-    df_pixel_data = pd.concat(pixel_data_l, 1)  # concatenate the list of dataframes into a single dataframe
+    df_pixel_data = pd.concat(pixel_data_l, axis=1)  # concatenate the list of dataframes into a single dataframe
 
     # calculate the statistics representative of the baseline concentration range
     df_index = df_pixel_data.index
