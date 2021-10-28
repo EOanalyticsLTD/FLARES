@@ -516,7 +516,7 @@ def perform_nn_search(df_fe: pd.DataFrame, df_clf: pd.DataFrame, columns: list, 
     # normalise the data of the pixel closest to the location of the fire event. This will be the pixel for which the
     # algorithm will return the nearest neighbours
     df_fe_scaled = min_max_scaler.transform(df_fe[columns].values)
-    df_closest_pixel_fe = pd.DataFrame(df_fe_scaled, columns=[columns])
+    df_closest_pixel_fe = pd.DataFrame(df_fe_scaled, columns=columns)
 
     # train the NN searcher
     nn_searcher = NearestNeighbors(n_neighbors=number_of_neighbours, algorithm=algorithm).fit(df_data)
@@ -709,7 +709,7 @@ def test_baseline():
 
     query = """
             SELECT id, datetime, ST_X(geometry), ST_Y(geometry), source, location, reference, type, info
-            FROM public.fire_events
+            FROM public.all_fire_events
             WHERE reference = 'Aqua' OR reference = 'Terra'
         """
 
