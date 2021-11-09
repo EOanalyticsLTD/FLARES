@@ -1,20 +1,38 @@
 # -*- coding: utf-8 -*-
 
 # Author: Emma Chalençon
-# Creation date: 27/08/2021
+# Creation date: 01/11/2021
 # Python version 3.8.5
-
 
 import fiona
 import rasterio
 import rasterio.mask
 from rasterio.warp import calculate_default_transform, reproject, Resampling
-import geopandas as gpd
 import pandas as pd
 import os
 from os import path
 import numpy as np
 from osgeo import gdal, ogr, osr
+from shapely import wkt
+from shapely.wkt import loads
+
+
+def ArraytoRaster(array, outputRaster):
+    """
+    Function that writes an array to a raster file
+
+    """
+    if not path.exists(outputRaster):
+        ncols, nrows = np.shape(array)
+        driver = gdal.GetDriverByName('GTiff')
+        outputRaster= driver.Create(outputRaster,nrows,ncols,1,gdal.GDT_Float64)
+        outputRaster.SetGeoTransform(geotransform)
+        outband = outputRaster.GetRasterBand(1)
+        outband.WriteArray(array)                    
+        # outputRaster.SetProjection(srs.ExportToWkt())
+        outputRaster.FlushCache()
+        outputRaster = None
+    return outputRaster
 
 def reprojection(raster):
     """
@@ -45,23 +63,6 @@ def reprojection(raster):
     new_image=rasterio.open(proj_imagery)
     return new_image
 
-def ArraytoRaster(array, outputRaster):
-    """
-    Function that writes an array to a raster file
-
-    """
-    if not path.exists(outputRaster):
-        ncols, nrows = np.shape(array)
-        driver = gdal.GetDriverByName('GTiff')
-        outputRaster= driver.Create(outputRaster,nrows,ncols,1,gdal.GDT_Float64)
-        outputRaster.SetGeoTransform(geotransform)
-        outband = outputRaster.GetRasterBand(1)
-        outband.WriteArray(array)                    
-        outputRaster.SetProjection(srs.ExportToWkt())
-        outputRaster.FlushCache()
-        outputRaster = None
-    return outputRaster
-    
 def Polygonize (raster, shapefile):
     """
     Function that creates a shapefile from a raster file
@@ -98,18 +99,6 @@ def ClipRwithS (shapefile, raster, outraster):
         with rasterio.open(outraster, "w", **out_meta) as dest:
             dest.write(out_image)
 
-def ClipSwithS (Clipped, Clipper, New):
-    """
-    Function that clips a shapefile with another shapefile
-
-    """
-    if not path.exists(New):
-        Clipper = gpd.read_file(Clipper)
-        Clipped = gpd.read_file(Clipped)
-        clipped = gpd.clip(Clipped,Clipper)
-        clipped.to_file(New)
-    return New
-    
 def FilterPolyArea (shapefile,areaN):
     """
     Function that delete every feature of a shapefile whose area is below the threshold areaN (m2)
@@ -268,7 +257,7 @@ def seedintersection (fn_raster, fn_zones, elim):
     print("______ Features after =", j)
     r_ds = None
     p_ds = None
-    
+
 def timestamp(date_raster, yearly_shapefile): 
     """
     Function that timestamps the final burnscar yearly features.
@@ -305,8 +294,8 @@ def timestamp(date_raster, yearly_shapefile):
              
             tr_ds = mem_driver_gdal.Create(\
             "", \
-            offsets[3] - offsets[2], \
-            offsets[1] - offsets[0], \
+            offsets[3] -1- offsets[2], \
+            offsets[1] -1- offsets[0], \
             1, \
             gdal.GDT_Byte)
              
@@ -317,8 +306,8 @@ def timestamp(date_raster, yearly_shapefile):
             r_array = r_ds.GetRasterBand(1).ReadAsArray(\
             offsets[2],\
             offsets[0],\
-            offsets[3] - offsets[2],\
-            offsets[1] - offsets[0])
+            offsets[3]-1 - offsets[2],\
+            offsets[1]-1 - offsets[0])
              
             id = p_feat.GetFID()
             r_array[pd.isnull(r_array)]=0
@@ -359,224 +348,278 @@ def timestamp(date_raster, yearly_shapefile):
     for feature in lyr :
         if feature.GetFID() in stampList:
             if feature.GetField("Date") is None: 
-                datestamp = fn_raster[-18:-10]
+                datestamp = date_raster[-18:-10]
                 feature.SetField("Date", datestamp)
                 lyr.SetFeature(feature)
             
     r_ds = None
     p_ds = None
 
-def ClipRwithR(extent_raster, original_raster, clipped_raster):
+def DeleteifCentroidin (file, mask):
+    file = workplace + file
+    driver_file = ogr.GetDriverByName("ESRI Shapefile")
+    data_file = driver_file.Open(file, 1)
+    layer_file = data_file.GetLayer()        
+    driver_mask = ogr.GetDriverByName('ESRI Shapefile')
+    data_mask = driver_mask.Open(mask, 0)
+    layer_mask = data_mask.GetLayer()
+    i = 0
+    for feature in layer_file :
+        geom = feature.GetGeometryRef()
+        Centroid = loads(geom.ExportToWkt()).representative_point()
+        # print (Centroid)
+        for polygons in layer_mask :
+            geom1 = polygons.GetGeometryRef()
+            geom1 = geom1.ExportToWkt()
+            geom1 = wkt.loads(geom1)
+            if Centroid.within(geom1):
+                # print ('inside')
+                # print (feature.GetFID())
+                layer_file.DeleteFeature(feature.GetFID())
+                i+=1
+                
+def CreateConstantFalseAlarmsMask(tile):
     """
-    Function that clips a raster with another raster's extent
+    Function that create a constant false alarms mask
 
     """
-    if not path.exists(clipped_raster):
-        data = gdal.Open(extent_raster)
-        geoTransform = data.GetGeoTransform()
-        minx = geoTransform[0]
-        maxy = geoTransform[3]
-        maxx = minx + geoTransform[1] * data.RasterXSize
-        miny = maxy + geoTransform[5] * data.RasterYSize
-        gdal.Translate(clipped_raster, original_raster, projWin = [minx, maxy, maxx, miny])
-
-# Parameters
-workplace = "D:/Workplace/" #workplace directory
-imgList = os.listdir(workplace) 
-srs = osr.SpatialReference()                 
-srs.ImportFromEPSG(2157)
-dst_crs = 'EPSG:2157' # chosen coordinate reference system 
-
-# Read imagery files 
-infilePath = "E:/Sentinel2_imagery/" #imagery directory
-fileList = os.listdir(infilePath)
-
-for file in fileList:
-    print("----------------------------------------")
-    date = file [11:19]
-    print("Date: " + date)
-    tile = file[39:44]
-    print("Tile: " + tile)
-    AOI = "E:/S2 tiles/" + tile + ".shp" #path to S2 tiles shapefiles
-    shape_file = gpd.read_file(AOI)
+    # Parameters
+    workplace = "D:/New folder/Workplace/Landsat_" + tile +"/"
+    srs = osr.SpatialReference()                 
+    srs.ImportFromEPSG(2157)
     
-    subfolder = infilePath+"\\"+file+"\\"+"GRANULE"
-    subsubfolder = os.listdir(subfolder)
-    infileFolder10 = subfolder+"\\"+subsubfolder[0]+"\\"+"IMG_DATA\R10m"
-    infileFolder20 = subfolder+"\\"+subsubfolder[0]+"\\"+"IMG_DATA\R20m"
-    finalraster = workplace + tile + "_" + date + "_final.tif"
-    if not path.exists(finalraster):
-        bandsList = os.listdir(infileFolder10)
-        for band in bandsList:
-            if band[23]=="B":
-                source_imagery = rasterio.open(infileFolder10+"\\"+band)
-                gt = source_imagery.transform
-                xRes = gt[0]
-                yRes = -gt[4]
-                bandN = band[23:26]
-                print('___ Imagery file ' + bandN +' Projection: ', source_imagery.crs)
-                
-                # Reproject imagery file 
-                new_image = reprojection(source_imagery)
-                print("______ " + bandN + ' new projection: ', new_image.crs)
-                
-                # Resample imagery file
-                input_file = workplace + tile + "_" + date + "_" + bandN +".tif"
-                resampled = workplace + tile + "_" + date + "_" + bandN + "_S.tif"
-                if not path.exists(resampled):
-                    ds = gdal.Translate(resampled, input_file, xRes=xRes, yRes=xRes, resampleAlg="bilinear")
-                    print("______ " + bandN + ' resampled')
-                
-                # Clip imagery file with AOI shapefile
-                clipped = workplace + tile + "_" + date + "_" + bandN +'_clip.tif'
-                ClipRwithS(AOI, resampled, clipped)
-                print("______ " + bandN + ' clipped')
-        
-        bandsList = os.listdir(infileFolder20)
-        for band in bandsList:
-            if band[23:26]=="B11" or band[23:26]=="B12" :
-                source_imagery = rasterio.open(infileFolder20+"\\"+band)
-                bandN = band[23:26]
-                print('___ Imagery file ' + bandN +' Projection: ', source_imagery.crs)
-                
-                # Reproject imagery file 
-                new_image = reprojection(source_imagery)
-                print("______ " + bandN + ' new projection: ', new_image.crs)
-                
-                # Resample imagery file
-                input_file = workplace + tile + "_" + date + "_" + bandN +".tif"
-                resampled = workplace + tile + "_" + date + "_" + bandN + "_S.tif"
-                if not path.exists(resampled):
-                    ds = gdal.Translate(resampled, input_file, xRes=xRes, yRes=yRes, resampleAlg="bilinear")
-                    print("______ " + bandN + ' resampled')
-                
-                # Clip imagery file with original 10m raster extent
-                clipped = workplace + tile + "_" + date + "_" + bandN +'_clip.tif'
-                extent = workplace + tile + "_" + date + "_B03_clip.tif"
-                ClipRwithR(extent, resampled, clipped)
-                print("______ " + bandN + ' clipped')
-        
-        print("\n => " + date + ": Imagery ready") 
-        print("\n Let's start the delineation process:") 
-        
-        imgList = os.listdir(workplace)
-        NDVI = workplace + tile + "_" + date + "_ndvi.tif"
-        NBRFILTER = workplace + tile + "_" + date + "_nbrfilter.tif"  
-        if not path.exists(NDVI): 
-            for img in imgList:
-                if img.endswith(tile + "_" + date+"_B02_clip.tif"):
-                    blue = gdal.Open(workplace + img).ReadAsArray()
-                    dataset = gdal.Open(workplace + img)
-                    geotransform = dataset.GetGeoTransform()
-                if img.endswith(tile + "_" + date+"_B03_clip.tif"):
-                    green = gdal.Open(workplace +img).ReadAsArray()
-                if img.endswith(tile + "_" + date+"_B04_clip.tif"):
-                    red = gdal.Open(workplace + img).ReadAsArray()
-                if img.endswith(tile + "_" + date+"_B08_clip.tif"):
-                    nir = gdal.Open(workplace + img).ReadAsArray()
-                if img.endswith(tile + "_" + date+"_B11_clip.tif"):
-                    swir = gdal.Open(workplace + img).ReadAsArray()
-                if img.endswith(tile + "_" + date+"_B12_clip.tif"):
-                    swir2 = gdal.Open(workplace + img).ReadAsArray()
-            
-            swir = swir.astype('f4')
-            blue = blue.astype('f4')
-            green = green.astype('f4')
-            red = red.astype('f4')
-            nir = nir.astype('f4')
-            swir2 = swir2.astype('f4')
-            np.seterr(divide='ignore', invalid='ignore')
-            
-            white = blue + green + red
-            white[white>=2000]= np.nan
-            white[white<2000]= 1
-            
-            swm = (blue+green)/(nir+swir)   #cloud and water mask
-            swm[swm>=0.4]=np.nan
-            swm[swm<0.4]=1
-            
-            ndvi = (nir-red)/(nir+red)
-            ndvi_export = ndvi*swm
-            ArraytoRaster(ndvi_export, NDVI)
-            
-            ndvi[ndvi>=0.6]= np.nan
-            ndvi[ndvi<=0.25]= np.nan
-            ndvi[ndvi<=0.6]= 1
-      
-            nbr = (nir - swir2) / (nir + swir2)
-            nbr[nbr >= 0.01]=np.nan
-            nbr[nbr <= -0.05]=2
-            nbr[nbr < 0.01]=1
-            
-            nbrfilter = nbr*swm*white*ndvi
-            
-            ArraytoRaster(nbrfilter, NBRFILTER)
-         
-        print("___ for " + date + ": NBR raster created and filtered with SWM NDVI and RGB")
-        
-        ## Mask the results with CLC2018 PRIME2 WFD and home-made constant false alarm mask
-        
-        Local_mask = "E:/Masks/" + tile + "_mask.shp" #path the S2 masks 
-        NBR_masked =  workplace + tile + "_" + date + "_NBR_masked.tif"
-        ClipRwithS(Local_mask, NBRFILTER, NBR_masked)
-        
-        ## Select only areas over 0.4ha 
-        
-        resultsRaster= workplace + tile + "_" + date + "_results.tif"
-        if not path.exists(resultsRaster): 
-            res = gdal.Open(NBR_masked).ReadAsArray()
-            dataset = gdal.Open(NBR_masked)
+    imgList = os.listdir(workplace)
+    img_list=[]
+    array_list=[]
+    
+    for img in imgList:    
+        if img.endswith("_ADDpoly.tif"):
+            img_list.append(img)
+            img_ds = gdal.Open(workplace + img).ReadAsArray()
+            dataset = gdal.Open(workplace + img)
             geotransform = dataset.GetGeoTransform()
-            res = res.astype('f4')
-            res[res==1]=2
-            ArraytoRaster(res, resultsRaster)
-            dataset = None 
-        resultsPoly = resultsRaster[:-4] + "_poly.shp" 
-        if not path.exists(resultsPoly):
-            outPoly = Polygonize (resultsRaster, resultsPoly)
-        print("___ for " + date + ": Areas under 0.4 ha filtered")    
-        FilterPolyArea (resultsPoly,4000)
+            img_ds[img_ds==np.nan]=0
+            array_list.append(img_ds)
+    
+    if len(array_list) >= 1 :
+        array_out = np.nansum(array_list, axis=0)
+        finalArray = array_out 
+        finalArray[finalArray<=2]=np.nan
+        finalArray[finalArray<=7]=1
+        finalArray[finalArray>=8]=2
+        addRaster = workplace + tile + "_FAADD.tif"
+        if not path.exists(addRaster):
+            ncols, nrows = np.shape(finalArray)
+            driver = gdal.GetDriverByName('GTiff')
+            outputRaster= driver.Create(addRaster,nrows,ncols,1,gdal.GDT_Float64)
+            outputRaster.SetGeoTransform(geotransform)
+            outband = outputRaster.GetRasterBand(1)
+            outband.WriteArray(finalArray)                    
+            outputRaster.SetProjection(srs.ExportToWkt())
+            outputRaster.FlushCache()
+            outputRaster = None
+        # print("___", len(array_list), "results combined")
         
-        ## Only keep polygons which contain a NBR_masked high intensity seed (<= -0.05)
+        finalArray[finalArray<=2]=2
+        addRasterpoly = workplace + tile + "_FAADDpoly.tif"
+        if not path.exists(addRasterpoly):
+            ncols, nrows = np.shape(finalArray)
+            driver = gdal.GetDriverByName('GTiff')
+            outputRaster= driver.Create(addRasterpoly,nrows,ncols,1,gdal.GDT_Float64)
+            outputRaster.SetGeoTransform(geotransform)
+            outband = outputRaster.GetRasterBand(1)
+            outband.WriteArray(finalArray)                    
+            outputRaster.SetProjection(srs.ExportToWkt())
+            outputRaster.FlushCache()
+            outputRaster = None
+        finalPoly = workplace + tile + "_FAmask.shp"
+        if not path.exists(finalPoly):
+            Polygonize (addRasterpoly, finalPoly)
+        # print("___ and polygonized")
         
-        print("___ for " + date + ": Polygons without high intensity seeds discarded")
-        seedintersection (NBR_masked, resultsPoly, 1.0)
+        print("\n" + "___ Polygons containing pixels with at least 4 repetitions considered constant false alarms")
+        seedintersection (addRaster, finalPoly, 1.0) 
+        return finalPoly
+
+def createBuffer0(inputfn, outputBufferfn):
+    inputds = ogr.Open(inputfn)
+    inputlyr = inputds.GetLayer()
+    srs = osr.SpatialReference()                 
+    srs.ImportFromEPSG(2157)
+    shpdriver = ogr.GetDriverByName('ESRI Shapefile')
+    outputBufferds = shpdriver.CreateDataSource(outputBufferfn)
+    bufferlyr = outputBufferds.CreateLayer(outputBufferfn, srs, geom_type=ogr.wkbPolygon)
+    featureDefn = bufferlyr.GetLayerDefn()
+    new_field1 = ogr.FieldDefn('Date', ogr.OFTString)
+    bufferlyr.CreateField(new_field1)
+    
+    for feature in inputlyr:
+        date = feature.GetField("Date")
+        ingeom = feature.GetGeometryRef()
+        geomBuffer = ingeom.Buffer(0)
+        outFeature = ogr.Feature(featureDefn)
+        outFeature.SetGeometry(geomBuffer)
+        outFeature.SetField("Date", date)
+        bufferlyr.CreateFeature(outFeature)
+
+tiles = ["A01","A02","A03","A04","A09","B01","B02","B03","B04","B05","B07",
+          "B08","B09","B10","B11","C01","C02","C03","C04","C05","C06","C07",
+          "C08","C09","C10","C11","D01","D02","D03","D04","D05","D06","D07",
+          "D08","D09","D10","D11","E01","E02","E03","E04","E05","E06","E07",
+          "E08","E09","E10","E11","E12","E13","E14","F01","F02","F03","F04",
+          "F05","F06","F07","F08","F09","F10","F11","F12","F13","F14","F15",
+          "G02","G03","G04","G05","G06","G07","G08","G09","G10","G11","G12",
+          "G13","G14","G15","H03","H04","H05","H06","H07","H08","H09","H10",
+          "H11","H13","H14","H15","I03","I04","I05","I06","I07","I08","I09",
+          "I10","I11","I12","I14","I15","J03","J04","J05","J06","J07","J08",
+          "J09","J10","J11","K03","K04","K05","K06","K07","K08","K09","K10",
+          "K11"]
+
+
+for tile in tiles: 
+    # Parameters
+    workplace = "D:/New folder/Workplace/" + tile + "/" #workplace directory
+    srs = osr.SpatialReference()                 
+    srs.ImportFromEPSG(2157)
+    dst_crs = 'EPSG:2157' # chosen coordinate reference system 
+    
+    # Read imagery files 
+    infilePath = "E:/Emma/FLARES/Image_processing/Sentinel2_imagery/" + tile + "/"  #imagery directory
+    fileList = os.listdir(infilePath)
+    
+    for file in fileList:
+        print("----------------------------------------")
+        date = file [6:]
+        print("Date: " + date)
+        tile = file[:5]
+        print("Tile: " + tile)
+        subfolder = infilePath + file + '/'
         finalraster = workplace + tile + "_" + date + "_final.tif"
         if not path.exists(finalraster):
-            ras_ds = gdal.Open(NBR_masked) 
-            vec_ds = ogr.Open(resultsPoly) 
-            lyr = vec_ds.GetLayer() 
-            geot = ras_ds.GetGeoTransform() 
-            drv_tiff = gdal.GetDriverByName("GTiff") 
-            chn_ras_ds = drv_tiff.Create(finalraster, ras_ds.RasterXSize, ras_ds.RasterYSize, 1, gdal.GDT_Float32)
-            chn_ras_ds.SetGeoTransform(geot)
-            chn_ras_ds.SetProjection(srs.ExportToWkt())
-            gdal.RasterizeLayer(chn_ras_ds, [1], lyr, options=['ATTRIBUTE=DN']) 
-            chn_ras_ds.GetRasterBand(1).SetNoDataValue(0.0) 
-            chn_ras_ds.FlushCache()
-            chn_ras_ds = None
+            bandsList = os.listdir(subfolder)
+            for band in bandsList:
+                if band.endswith("20m.jp2"):
+                    resampled = subfolder + band[:-7] + "10m.jp2"
+                    if not path.exists(resampled):
+                        gdal.Translate(resampled, subfolder + band, xRes=10, yRes=10, resampleAlg="bilinear")
+            bandsList = os.listdir(subfolder)
+            for band in bandsList:
+                if band.endswith("10m.jp2"):
+                    bandN = band[-11:-8]
+                    source_imagery = rasterio.open(subfolder+band)
+                    reprojection(source_imagery)
+              
+            imgList = os.listdir(workplace) 
+            NDVI = workplace + tile + "_" + date + "_ndvi.tif"
+            NBRFILTER = workplace + tile + "_" + date + "_nbrfilter.tif"  
+            if not path.exists(NDVI): 
+                for img in imgList:
+                    if img == tile + "_" + date + "_" + 'B02.tif':
+                        blue = gdal.Open(workplace + img).ReadAsArray()
+                        dataset = gdal.Open(workplace + img)
+                        geotransform = dataset.GetGeoTransform()
+                    if img == tile + "_" + date + "_" + 'B03.tif':
+                        green = gdal.Open(workplace + img).ReadAsArray()
+                    if img == tile + "_" + date + "_" + 'B04.tif':
+                        red = gdal.Open(workplace + img).ReadAsArray()
+                    if img == tile + "_" + date + "_" + 'B08.tif':
+                        nir = gdal.Open(workplace + img).ReadAsArray()
+                    if img == tile + "_" + date + "_" + 'B11.tif':
+                        swir = gdal.Open(workplace + img).ReadAsArray()
+                    if img == tile + "_" + date + "_" + 'B12.tif':
+                        swir2 = gdal.Open(workplace + img).ReadAsArray()
+                
+                swir = swir.astype('f4')
+                blue = blue.astype('f4')
+                green = green.astype('f4')
+                red = red.astype('f4')
+                nir = nir.astype('f4')
+                swir2 = swir2.astype('f4')
+                np.seterr(divide='ignore', invalid='ignore')
+                
+                white = blue + green + red
+                white[white>=2000]= np.nan
+                white[white<2000]= 1
+                
+                swm = (blue+green)/(nir+swir)   #cloud and water mask
+                swm[swm>=0.4]=np.nan
+                swm[swm<0.4]=1
+                
+                ndvi = (nir-red)/(nir+red)
+                ndvi_export = ndvi*swm
+                ArraytoRaster(ndvi_export, NDVI)
+                
+                ndvi[ndvi>=0.6]= np.nan
+                ndvi[ndvi<=0.25]= np.nan
+                ndvi[ndvi<=0.6]= 1
+          
+                nbr = (nir - swir2) / (nir + swir2)
+                nbr[nbr >= 0.01]=np.nan
+                nbr[nbr <= -0.05]=2
+                nbr[nbr < 0.01]=1
+                
+                nbrfilter = nbr*swm*white*ndvi
+                
+                ArraytoRaster(nbrfilter, NBRFILTER)
+             
+            print("___ for " + date + ": NBR raster created and filtered with SWM NDVI and RGB")
+            
+            ## Mask the results with CLC2018 PRIME2 WFD and home-made constant false alarm mask
+            
+            Local_mask = "E:/Emma/FLARES/Image_processing/UsefulData_Ireland/Masks/" + tile + "_mask.shp" #path the S2 masks 
+            NBR_masked =  workplace + tile + "_" + date + "_NBR_masked.tif"
+            ClipRwithS(Local_mask, NBRFILTER, NBR_masked)
+            
+            ## Select only areas over 0.4ha 
+            
+            resultsRaster= workplace + tile + "_" + date + "_results.tif"
+            if not path.exists(resultsRaster): 
+                res = gdal.Open(NBR_masked).ReadAsArray()
+                dataset = gdal.Open(NBR_masked)
+                geotransform = dataset.GetGeoTransform()
+                res = res.astype('f4')
+                res[res==1]=2
+                ArraytoRaster(res, resultsRaster)
+                dataset = None 
+            resultsPoly = resultsRaster[:-4] + "_poly.shp" 
+            if not path.exists(resultsPoly):
+                outPoly = Polygonize (resultsRaster, resultsPoly)
+            print("___ for " + date + ": Areas under 0.4 ha filtered")    
+            FilterPolyArea (resultsPoly,4000)
+            
+            ## Only keep polygons which contain a NBR_masked high intensity seed (<= -0.05)
+            
+            print("___ for " + date + ": Polygons without high intensity seeds discarded")
+            seedintersection (NBR_masked, resultsPoly, 1.0)
+            finalraster = workplace + tile + "_" + date + "_final.tif"
+            if not path.exists(finalraster):
+                ras_ds = gdal.Open(NBR_masked) 
+                vec_ds = ogr.Open(resultsPoly) 
+                lyr = vec_ds.GetLayer() 
+                geot = ras_ds.GetGeoTransform() 
+                drv_tiff = gdal.GetDriverByName("GTiff") 
+                chn_ras_ds = drv_tiff.Create(finalraster, ras_ds.RasterXSize, ras_ds.RasterYSize, 1, gdal.GDT_Float32)
+                chn_ras_ds.SetGeoTransform(geot)
+                chn_ras_ds.SetProjection(srs.ExportToWkt())
+                gdal.RasterizeLayer(chn_ras_ds, [1], lyr, options=['ATTRIBUTE=DN']) 
+                chn_ras_ds.GetRasterBand(1).SetNoDataValue(0.0) 
+                chn_ras_ds.FlushCache()
+                chn_ras_ds = None
+        
+            print("\n => " + date + ": burn area delineation done \n")
+            
+    print("----------------------------------------")
+    print("\n Let's put yearly results together")
     
-        print("\n => " + date + ": burn area delineation done \n") 
-
-print("----------------------------------------")
-print("\n FINAL STEP")
-
-imgList = os.listdir(workplace)
-years = ["2015", "2016", "2017", "2018", "2019", "2020", "2021"]
-months = ["01","02","03","04","05","06"]
-tiles = ["29UMT","28UGC","28UGD","29ULT","29UMA","29UMS","29UMT","29UMU","29UMV",
-          "29UNA","29UNB","29UNT","29UNU","29UNV","29UPA","29UPB","29UPT","29UPU",
-          "29UPV","29UQU","30UUE"]
-for tile in tiles:
-    print("\n" + "----------------------------------------")
-    print(tile)
-    print("----------------------------------------")    
+    imgList = os.listdir(workplace)
+    years = ["2015", "2016", "2017", "2018", "2019", "2020", "2021"]
+    months = ["01","02","03","04","05","06"]
+    
     for year in years:
         img_list=[]
         array_list=[]
         min_list=[]
         max_list=[]
-        
         for img in imgList:
             
         ## Add all the burnscar polygons from the same tile/year:
@@ -592,7 +635,7 @@ for tile in tiles:
         ## Calculate the difference between the min ndvi Jan-Jui/ the max ndvi Aug-Dec:
             # if burn scar: positive dif of at least 0.1 but not higher than 0.6
             
-            if img.endswith("_ndvi.tif") and img.startswith(tile+"_"+year):
+            if year != "2015" and year != "2016" and img.endswith("_ndvi.tif") and img.startswith(tile+"_"+year):
                 n = len(tile)+5
                 print(img[n:n+2])
                 if img[n:n+2] in months:
@@ -608,14 +651,15 @@ for tile in tiles:
                     dataset = gdal.Open(workplace + img)
                     geotransform = dataset.GetGeoTransform()
                     max_list.append(img_ds)
-                    
+        
+        print("\n In", year, len(array_list), "images analysed:")                
+        
         if len(min_list) >= 1 :
             addin = np.stack(min_list, axis=0 )
             Min = np.nanmin(addin, axis=0)      
             if len(max_list) >= 1 :
                 addax = np.stack(max_list, axis=0 )
-                Max = np.nanmax(addax, axis=0)    
-            
+                Max = np.nanmax(addax, axis=0)                
                 Diff = Max-Min  
                 MAX = workplace + tile + "_" + year + "_Max.tif"
                 MIN = workplace + tile + "_" + year + "_Min.tif"
@@ -628,17 +672,20 @@ for tile in tiles:
                 Diff[Diff==np.nan]=0
                 DIFF = workplace + tile + "_" + year + "_Diff.tif"
                 if not path.exists(DIFF):
-                    ArraytoRaster(Diff, DIFF)    
-        print("\n In", year, len(array_list), "images analysed")            
-        
+                    ArraytoRaster(Diff, DIFF)
+                    
         if len(array_list) >= 1 :  
-            array_out = sum(array_list)
-            finalArray = array_out * Diff
+            array_out = np.nansum(array_list, axis=0)
+            if year != "2015" and year != "2016":
+                finalArray = array_out * Diff
+            else:
+                finalArray = array_out
+            
             finalArray[finalArray<=0]=np.nan
             addRaster = workplace + tile + "_" + year + "_ADD.tif"
             if not path.exists(addRaster):
                 ArraytoRaster(finalArray, addRaster)
-            print("___", len(array_list), "results combined")
+            print("______ ", len(array_list), "results combined")
             
             finalArray[finalArray>=2]=2        
             addRasterpoly = workplace + tile + "_" + year + "_ADDpoly.tif"
@@ -647,15 +694,41 @@ for tile in tiles:
             finalPoly = workplace + tile + "_" + year + ".shp"
             if not path.exists(finalPoly):
                 Polygonize (addRasterpoly, finalPoly)
-            print("___ and polygonized")
+            print("______ and polygonized")
             
-            print("___ Polygons present on one single date only discarded")
-            seedintersection (addRaster, finalPoly, 3.0)
-            FilterPolyArea (finalPoly,4000)
-        
+            if year != "2015" and year != "2016":
+                print("___ Polygons present on one single date only discarded")
+                seedintersection (addRaster, finalPoly, 3.0)
+                FilterPolyArea (finalPoly,4000)
+            
             img_list.sort()
             for img in img_list:
                 timestamp(workplace+img, finalPoly)
-            print("___ Polygons time-stamped")   
+            print("______ Polygons time-stamped")   
          
     print("\n----------------------------------------")
+    
+    print("\n Final filtering")
+    
+    print("\n" + "----------------------------------------")
+    
+    FA_mask = CreateConstantFalseAlarmsMask(tile)
+    for year in years:
+        imgList = os.listdir(workplace)
+        for img in imgList:
+            if img.endswith(tile+"_"+year+".shp"):
+                DeleteifCentroidin (img, FA_mask)
+                print("___ " + year + "-Results filtered with constant false alarms")
+                outputBufferfn = workplace + img[:-4]+ "_final.shp"
+                if not path.exists(outputBufferfn):
+                    createBuffer0(workplace + img, outputBufferfn)
+                
+    for year in years:
+        imgList = os.listdir(workplace)
+        for img in imgList:
+            if img.endswith(tile+"_"+year+"_final.shp") and year != "2015":
+                mask = workplace + img[:-12]+str(int(year[-2:])-1)+"_final.shp"
+                DeleteifCentroidin (img, mask)
+    print("______ Results filtered to not report a burnscar two years in a row")
+    
+    print("----------------------------------------")
