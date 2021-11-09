@@ -16,6 +16,8 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 import pandas as pd
 import numpy as np
 from osgeo import gdal, ogr, osr
+from shapely import wkt
+from shapely.wkt import loads
 
 try: # This is included as the module may not properly install in Anaconda.
     import ieo
@@ -734,6 +736,113 @@ def ClipRwithR(extent_raster, original_raster, clipped_raster):
         miny = maxy + geoTransform[5] * data.RasterYSize
         gdal.Translate(clipped_raster, original_raster, projWin = [minx, maxy, maxx, miny])
 
+def DeleteifCentroidin (file, mask):
+    file = workplace + file
+    driver_file = ogr.GetDriverByName("ESRI Shapefile")
+    data_file = driver_file.Open(file, 1)
+    layer_file = data_file.GetLayer()        
+    driver_mask = ogr.GetDriverByName('ESRI Shapefile')
+    data_mask = driver_mask.Open(mask, 0)
+    layer_mask = data_mask.GetLayer()
+    i = 0
+    for feature in layer_file :
+        geom = feature.GetGeometryRef()
+        Centroid = loads(geom.ExportToWkt()).representative_point()
+        # print (Centroid)
+        for polygons in layer_mask :
+            geom1 = polygons.GetGeometryRef()
+            geom1 = geom1.ExportToWkt()
+            geom1 = wkt.loads(geom1)
+            if Centroid.within(geom1):
+                # print ('inside')
+                # print (feature.GetFID())
+                layer_file.DeleteFeature(feature.GetFID())
+                i+=1
+                
+def CreateConstantFalseAlarmsMask(tile):
+    """
+    Function that create a constant false alarms mask
+
+    """
+    # Parameters
+    workplace = "D:/New folder/Workplace/Landsat_" + tile +"/"
+    srs = osr.SpatialReference()                 
+    srs.ImportFromEPSG(2157)
+    
+    imgList = os.listdir(workplace)
+    img_list=[]
+    array_list=[]
+    
+    for img in imgList:    
+        if img.endswith("_ADDpoly.tif"):
+            img_list.append(img)
+            img_ds = gdal.Open(workplace + img).ReadAsArray()
+            dataset = gdal.Open(workplace + img)
+            geotransform = dataset.GetGeoTransform()
+            img_ds[img_ds==np.nan]=0
+            array_list.append(img_ds)
+    
+    if len(array_list) >= 1 :
+        array_out = np.nansum(array_list, axis=0)
+        finalArray = array_out 
+        finalArray[finalArray<=2]=np.nan
+        finalArray[finalArray<=7]=1
+        finalArray[finalArray>=8]=2
+        addRaster = workplace + tile + "_FAADD.tif"
+        if not os.path.exists(addRaster):
+            ncols, nrows = np.shape(finalArray)
+            driver = gdal.GetDriverByName('GTiff')
+            outputRaster= driver.Create(addRaster,nrows,ncols,1,gdal.GDT_Float64)
+            outputRaster.SetGeoTransform(geotransform)
+            outband = outputRaster.GetRasterBand(1)
+            outband.WriteArray(finalArray)                    
+            outputRaster.SetProjection(srs.ExportToWkt())
+            outputRaster.FlushCache()
+            outputRaster = None
+        # print("___", len(array_list), "results combined")
+        
+        finalArray[finalArray<=2]=2
+        addRasterpoly = workplace + tile + "_FAADDpoly.tif"
+        if not os.path.exists(addRasterpoly):
+            ncols, nrows = np.shape(finalArray)
+            driver = gdal.GetDriverByName('GTiff')
+            outputRaster= driver.Create(addRasterpoly,nrows,ncols,1,gdal.GDT_Float64)
+            outputRaster.SetGeoTransform(geotransform)
+            outband = outputRaster.GetRasterBand(1)
+            outband.WriteArray(finalArray)                    
+            outputRaster.SetProjection(srs.ExportToWkt())
+            outputRaster.FlushCache()
+            outputRaster = None
+        finalPoly = workplace + tile + "_FAmask.shp"
+        if not os.path.exists(finalPoly):
+            Polygonize (addRasterpoly, finalPoly)
+        # print("___ and polygonized")
+        
+        print("\n" + "___ Polygons containing pixels with at least 4 repetitions considered constant false alarms")
+        seedintersection (addRaster, finalPoly, 1.0) 
+        return finalPoly
+
+def createBuffer0(inputfn, outputBufferfn):
+    inputds = ogr.Open(inputfn)
+    inputlyr = inputds.GetLayer()
+    srs = osr.SpatialReference()                 
+    srs.ImportFromEPSG(2157)
+    shpdriver = ogr.GetDriverByName('ESRI Shapefile')
+    outputBufferds = shpdriver.CreateDataSource(outputBufferfn)
+    bufferlyr = outputBufferds.CreateLayer(outputBufferfn, srs, geom_type=ogr.wkbPolygon)
+    featureDefn = bufferlyr.GetLayerDefn()
+    new_field1 = ogr.FieldDefn('Date', ogr.OFTString)
+    bufferlyr.CreateField(new_field1)
+    
+    for feature in inputlyr:
+        date = feature.GetField("Date")
+        ingeom = feature.GetGeometryRef()
+        geomBuffer = ingeom.Buffer(0)
+        outFeature = ogr.Feature(featureDefn)
+        outFeature.SetGeometry(geomBuffer)
+        outFeature.SetField("Date", date)
+        bufferlyr.CreateFeature(outFeature)
+
 
 def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
          tile = None, sensor = 'both', useMGRS = False, verbose = False, remove = False, transfer = False):
@@ -1109,6 +1218,33 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                         for img in img_list:
                             timestamp(os.path.join(workplace, sensor.lower(), img), finalPoly, srs)
                         print("___ Polygons time-stamped")   
+                        
+                        print("\n----------------------------------------")
+    
+                        print("\n Final filtering")
+                        
+                        print("\n" + "----------------------------------------")
+                        
+                        FA_mask = CreateConstantFalseAlarmsMask(tile)
+                        for year in years:
+                            imgList = os.listdir(workplace)
+                            for img in imgList:
+                                if img.endswith(tile+"_"+year+".shp"):
+                                    DeleteifCentroidin (img, FA_mask)
+                                    print("___ " + year + "-Results filtered with constant false alarms")
+                                    outputBufferfn = workplace + img[:-4]+ "_final.shp"
+                                    if not os.path.exists(outputBufferfn):
+                                        createBuffer0(workplace + img, outputBufferfn)
+                                    
+                        for year in years:
+                            imgList = os.listdir(workplace)
+                            for img in imgList:
+                                if img.endswith(tile+"_"+year+"_final.shp") and year != "2015":
+                                    mask = workplace + img[:-12]+str(int(year[-2:])-1)+"_final.shp"
+                                    DeleteifCentroidin (img, mask)
+                        print("______ Results filtered to not report a burnscar two years in a row")
+                        
+                        print("----------------------------------------")
                      
                     print("\n----------------------------------------")
                     print(f'Processing complete for year {year} for tile {tile}.')
