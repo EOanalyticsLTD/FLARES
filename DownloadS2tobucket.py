@@ -8,14 +8,13 @@ access_key = 'AXKWGHC81YQL7QNOXC56'
 secret_key = 'e9hSQnyOqtlaoZT5MNKpAI2k3homSbom4iSnA60x'
 
 downloader = MundiCollection("Sentinel2").mundi_downloader(access_key, secret_key)
-target_folder = "A:/"
 
 downloader.browse(date_from='2018-01-01T12:00:00', date_to='2018-07-31T23:00:00', other_fields={"DIAS:tileIdentifier": "29UPU", "DIAS:productLevel" :  "L2A"})
 print(len(downloader.records.items()))
 i = 0
 for id_, record in downloader.records.items():
     if float(get_node(record, 'DIAS:cloudCoverPercentage').text) <70:
-        target_folder = "C:/"
+        target_folder = "A:/"
         print(id_)
         print(get_node(record, 'DIAS:cloudCoverPercentage').text)
         print(get_node(record, "DIAS:sensingStartDate").text)
