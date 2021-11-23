@@ -202,8 +202,8 @@ def seedintersection (fn_raster, fn_zones, elim):
              
             tr_ds = mem_driver_gdal.Create(\
             "", \
-            offsets[3] - offsets[2], \
-            offsets[1] - offsets[0], \
+            offsets[3]-1 - offsets[2], \
+            offsets[1]-1 - offsets[0], \
             1, \
             gdal.GDT_Byte)
              
@@ -214,8 +214,8 @@ def seedintersection (fn_raster, fn_zones, elim):
             r_array = r_ds.GetRasterBand(1).ReadAsArray(\
             offsets[2],\
             offsets[0],\
-            offsets[3] - offsets[2],\
-            offsets[1] - offsets[0])
+            offsets[3]-1 - offsets[2],\
+            offsets[1]-1 - offsets[0])
              
             id = p_feat.GetFID()
             
@@ -383,11 +383,6 @@ def CreateConstantFalseAlarmsMask(tile):
     Function that create a constant false alarms mask
 
     """
-    # Parameters
-    workplace = "D:/New folder/Workplace/Landsat_" + tile +"/"
-    srs = osr.SpatialReference()                 
-    srs.ImportFromEPSG(2157)
-    
     imgList = os.listdir(workplace)
     img_list=[]
     array_list=[]
@@ -404,7 +399,7 @@ def CreateConstantFalseAlarmsMask(tile):
     if len(array_list) >= 1 :
         array_out = np.nansum(array_list, axis=0)
         finalArray = array_out 
-        finalArray[finalArray<=2]=np.nan
+        finalArray[finalArray<=4]=np.nan
         finalArray[finalArray<=7]=1
         finalArray[finalArray>=8]=2
         addRaster = workplace + tile + "_FAADD.tif"
@@ -475,136 +470,126 @@ tiles = ["A01","A02","A03","A04","A09","B01","B02","B03","B04","B05","B07",
           "J09","J10","J11","K03","K04","K05","K06","K07","K08","K09","K10",
           "K11"]
 
+tiles = ["K07"]
 
 for tile in tiles: 
     # Parameters
-    workplace = "D:/New folder/Workplace/" + tile + "/" #workplace directory
+    workplace = "D:/New folder/Workplace/Sentinel/"+ tile +"/" #tile workplace directory
+    if not os.path.isdir(workplace):
+        os.makedirs(workplace)
     srs = osr.SpatialReference()                 
     srs.ImportFromEPSG(2157)
     dst_crs = 'EPSG:2157' # chosen coordinate reference system 
     
     # Read imagery files 
-    infilePath = "E:/Emma/FLARES/Image_processing/Sentinel2_imagery/" + tile + "/"  #imagery directory
+    infilePath = "E:/Emma/FLARES/Image_processing/Sentinel2_imagery/"+ tile +"/" #imagery directory
     fileList = os.listdir(infilePath)
-    
-    for file in fileList:
-        print("----------------------------------------")
-        date = file [6:]
-        print("Date: " + date)
-        tile = file[:5]
-        print("Tile: " + tile)
-        subfolder = infilePath + file + '/'
-        finalraster = workplace + tile + "_" + date + "_final.tif"
-        if not path.exists(finalraster):
-            bandsList = os.listdir(subfolder)
-            for band in bandsList:
-                if band.endswith("20m.jp2"):
-                    resampled = subfolder + band[:-7] + "10m.jp2"
-                    if not path.exists(resampled):
-                        gdal.Translate(resampled, subfolder + band, xRes=10, yRes=10, resampleAlg="bilinear")
-            bandsList = os.listdir(subfolder)
-            for band in bandsList:
-                if band.endswith("10m.jp2"):
-                    bandN = band[-11:-8]
-                    source_imagery = rasterio.open(subfolder+band)
-                    reprojection(source_imagery)
-              
-            imgList = os.listdir(workplace) 
-            NDVI = workplace + tile + "_" + date + "_ndvi.tif"
-            NBRFILTER = workplace + tile + "_" + date + "_nbrfilter.tif"  
-            if not path.exists(NDVI): 
-                for img in imgList:
-                    if img == tile + "_" + date + "_" + 'B02.tif':
-                        blue = gdal.Open(workplace + img).ReadAsArray()
-                        dataset = gdal.Open(workplace + img)
-                        geotransform = dataset.GetGeoTransform()
-                    if img == tile + "_" + date + "_" + 'B03.tif':
-                        green = gdal.Open(workplace + img).ReadAsArray()
-                    if img == tile + "_" + date + "_" + 'B04.tif':
-                        red = gdal.Open(workplace + img).ReadAsArray()
-                    if img == tile + "_" + date + "_" + 'B08.tif':
-                        nir = gdal.Open(workplace + img).ReadAsArray()
-                    if img == tile + "_" + date + "_" + 'B11.tif':
-                        swir = gdal.Open(workplace + img).ReadAsArray()
-                    if img == tile + "_" + date + "_" + 'B12.tif':
-                        swir2 = gdal.Open(workplace + img).ReadAsArray()
-                
-                swir = swir.astype('f4')
-                blue = blue.astype('f4')
-                green = green.astype('f4')
-                red = red.astype('f4')
-                nir = nir.astype('f4')
-                swir2 = swir2.astype('f4')
-                np.seterr(divide='ignore', invalid='ignore')
-                
-                white = blue + green + red
-                white[white>=2000]= np.nan
-                white[white<2000]= 1
-                
-                swm = (blue+green)/(nir+swir)   #cloud and water mask
-                swm[swm>=0.4]=np.nan
-                swm[swm<0.4]=1
-                
-                ndvi = (nir-red)/(nir+red)
-                ndvi_export = ndvi*swm
-                ArraytoRaster(ndvi_export, NDVI)
-                
-                ndvi[ndvi>=0.6]= np.nan
-                ndvi[ndvi<=0.25]= np.nan
-                ndvi[ndvi<=0.6]= 1
-          
-                nbr = (nir - swir2) / (nir + swir2)
-                nbr[nbr >= 0.01]=np.nan
-                nbr[nbr <= -0.05]=2
-                nbr[nbr < 0.01]=1
-                
-                nbrfilter = nbr*swm*white*ndvi
-                
-                ArraytoRaster(nbrfilter, NBRFILTER)
-             
-            print("___ for " + date + ": NBR raster created and filtered with SWM NDVI and RGB")
+    for file in fileList: 
+        if file.endswith(".dat"):
+            print("----------------------------------------")
+            date = file [-16:-8]
+            print("Date: " + date)
             
-            ## Mask the results with CLC2018 PRIME2 WFD and home-made constant false alarm mask
+            tile = file [-7:-4]
+            print("Tile: " + tile)
             
-            Local_mask = "E:/Emma/FLARES/Image_processing/UsefulData_Ireland/Masks/" + tile + "_mask.shp" #path the S2 masks 
-            NBR_masked =  workplace + tile + "_" + date + "_NBR_masked.tif"
-            ClipRwithS(Local_mask, NBRFILTER, NBR_masked)
-            
-            ## Select only areas over 0.4ha 
-            
-            resultsRaster= workplace + tile + "_" + date + "_results.tif"
-            if not path.exists(resultsRaster): 
-                res = gdal.Open(NBR_masked).ReadAsArray()
-                dataset = gdal.Open(NBR_masked)
-                geotransform = dataset.GetGeoTransform()
-                res = res.astype('f4')
-                res[res==1]=2
-                ArraytoRaster(res, resultsRaster)
-                dataset = None 
-            resultsPoly = resultsRaster[:-4] + "_poly.shp" 
-            if not path.exists(resultsPoly):
-                outPoly = Polygonize (resultsRaster, resultsPoly)
-            print("___ for " + date + ": Areas under 0.4 ha filtered")    
-            FilterPolyArea (resultsPoly,4000)
-            
-            ## Only keep polygons which contain a NBR_masked high intensity seed (<= -0.05)
-            
-            print("___ for " + date + ": Polygons without high intensity seeds discarded")
-            seedintersection (NBR_masked, resultsPoly, 1.0)
             finalraster = workplace + tile + "_" + date + "_final.tif"
             if not path.exists(finalraster):
-                ras_ds = gdal.Open(NBR_masked) 
-                vec_ds = ogr.Open(resultsPoly) 
-                lyr = vec_ds.GetLayer() 
-                geot = ras_ds.GetGeoTransform() 
-                drv_tiff = gdal.GetDriverByName("GTiff") 
-                chn_ras_ds = drv_tiff.Create(finalraster, ras_ds.RasterXSize, ras_ds.RasterYSize, 1, gdal.GDT_Float32)
-                chn_ras_ds.SetGeoTransform(geot)
-                chn_ras_ds.SetProjection(srs.ExportToWkt())
-                gdal.RasterizeLayer(chn_ras_ds, [1], lyr, options=['ATTRIBUTE=DN']) 
-                chn_ras_ds.GetRasterBand(1).SetNoDataValue(0.0) 
-                chn_ras_ds.FlushCache()
-                chn_ras_ds = None
+                print("\n Let's start the delineation process:")
+                
+                NBRFILTER = workplace + tile + "_" + date + "_nbrfilter.tif" 
+                NBR = workplace + tile + "_" + date + "_nbr.tif"
+                WHITE = workplace + tile + "_" + date + "_W.tif"
+                NDVI =  workplace + tile + "_" + date + "_ndvi.tif"
+                
+                if not path.exists(NBR):
+                    ds = gdal.Open(infilePath+file)        
+                    dataset = gdal.Open(infilePath+file)
+                    geotransform = dataset.GetGeoTransform()
+                    
+                    blue = ds.GetRasterBand(1).ReadAsArray()
+                    green = ds.GetRasterBand(2).ReadAsArray()
+                    red = ds.GetRasterBand(3).ReadAsArray()
+                    nir = ds.GetRasterBand(4).ReadAsArray()
+                    swir = ds.GetRasterBand(5).ReadAsArray()
+                    swir2 = ds.GetRasterBand(6).ReadAsArray()
+                
+                    swir = swir.astype('f4')
+                    blue = blue.astype('f4')
+                    green = green.astype('f4')
+                    red = red.astype('f4')
+                    nir = nir.astype('f4')
+                    swir2 = swir2.astype('f4')
+                    np.seterr(divide='ignore', invalid='ignore')
+                    
+                    white = blue + green + red
+                    white[white>=2000]= np.nan
+                    white[white<2000]= 1
+                    
+                    swm = (blue+green)/(nir+swir)   #cloud and water mask
+                    swm[swm>=0.4]=np.nan
+                    swm[swm<0.4]=1
+                    
+                    ndvi = (nir-red)/(nir+red)
+                    ndvi_export = ndvi*swm
+                    ArraytoRaster(ndvi_export, NDVI)
+                    
+                    ndvi[ndvi>=0.6]= np.nan
+                    ndvi[ndvi<=0.25]= np.nan
+                    ndvi[ndvi<=0.6]= 1
+              
+                    nbr = (nir - swir2) / (nir + swir2)
+                    nbr[nbr >= 0.01]=np.nan
+                    nbr[nbr <= -0.05]=2
+                    nbr[nbr < 0.01]=1
+                    
+                    nbrfilter = nbr*swm*white*ndvi
+                    
+                    ArraytoRaster(nbrfilter, NBRFILTER)
+                 
+                print("___ for " + date + ": NBR raster created and filtered with SWM NDVI and RGB")
+            
+                ## Mask the results with CLC2018 PRIME2 WFD and home-made constant false alarm mask
+                
+                Local_mask = "E:/Emma/FLARES/Image_processing/UsefulData_Ireland/AIRT_masks/" + tile + "_mask.shp" #path the S2 masks 
+                NBR_masked =  workplace + tile + "_" + date + "_NBR_masked.tif"
+                ClipRwithS(Local_mask, NBRFILTER, NBR_masked)
+                
+                ## Select only areas over 0.4ha 
+                
+                resultsRaster= workplace + tile + "_" + date + "_results.tif"
+                if not path.exists(resultsRaster): 
+                    res = gdal.Open(NBR_masked).ReadAsArray()
+                    dataset = gdal.Open(NBR_masked)
+                    geotransform = dataset.GetGeoTransform()
+                    res = res.astype('f4')
+                    res[res==1]=2
+                    ArraytoRaster(res, resultsRaster)
+                    dataset = None 
+                resultsPoly = resultsRaster[:-4] + "_poly.shp" 
+                if not path.exists(resultsPoly):
+                    outPoly = Polygonize (resultsRaster, resultsPoly)
+                print("___ for " + date + ": Areas under 0.4 ha filtered")    
+                FilterPolyArea (resultsPoly,4000)
+                
+                ## Only keep polygons which contain a NBR_masked high intensity seed (<= -0.05)
+                
+                print("___ for " + date + ": Polygons without high intensity seeds discarded")
+                seedintersection (NBR_masked, resultsPoly, 1.0)
+                finalraster = workplace + tile + "_" + date + "_final.tif"
+                if not path.exists(finalraster):
+                    ras_ds = gdal.Open(NBR_masked) 
+                    vec_ds = ogr.Open(resultsPoly) 
+                    lyr = vec_ds.GetLayer() 
+                    geot = ras_ds.GetGeoTransform() 
+                    drv_tiff = gdal.GetDriverByName("GTiff") 
+                    chn_ras_ds = drv_tiff.Create(finalraster, ras_ds.RasterXSize, ras_ds.RasterYSize, 1, gdal.GDT_Float32)
+                    chn_ras_ds.SetGeoTransform(geot)
+                    chn_ras_ds.SetProjection(srs.ExportToWkt())
+                    gdal.RasterizeLayer(chn_ras_ds, [1], lyr, options=['ATTRIBUTE=DN']) 
+                    chn_ras_ds.GetRasterBand(1).SetNoDataValue(0.0) 
+                    chn_ras_ds.FlushCache()
+                    chn_ras_ds = None
         
             print("\n => " + date + ": burn area delineation done \n")
             
@@ -612,7 +597,7 @@ for tile in tiles:
     print("\n Let's put yearly results together")
     
     imgList = os.listdir(workplace)
-    years = ["2015", "2016", "2017", "2018", "2019", "2020", "2021"]
+    years = ["2015", "2016", "2017", "2018", "2019","2020","2021"] 
     months = ["01","02","03","04","05","06"]
     
     for year in years:
@@ -620,91 +605,93 @@ for tile in tiles:
         array_list=[]
         min_list=[]
         max_list=[]
-        for img in imgList:
-            
-        ## Add all the burnscar polygons from the same tile/year:
-            
-            if img.endswith("_final.tif") and img.startswith(tile+"_"+year):
-                img_list.append(img)
-                img_ds = gdal.Open(workplace + img).ReadAsArray()
-                dataset = gdal.Open(workplace + img)
-                geotransform = dataset.GetGeoTransform()
-                img_ds[img_ds==np.nan]=0
-                array_list.append(img_ds)
-        
-        ## Calculate the difference between the min ndvi Jan-Jui/ the max ndvi Aug-Dec:
-            # if burn scar: positive dif of at least 0.1 but not higher than 0.6
-            
-            if year != "2015" and year != "2016" and img.endswith("_ndvi.tif") and img.startswith(tile+"_"+year):
-                n = len(tile)+5
-                print(img[n:n+2])
-                if img[n:n+2] in months:
-                    print(img, "in months")
-                    img_ds = gdal.Open(workplace + img).ReadAsArray()
-                    dataset = gdal.Open(workplace + img)
-                    geotransform = dataset.GetGeoTransform()
-                    min_list.append(img_ds)
-                if img[n:n+2] not in months:
-                    print(img, " not in months")
+        finalPoly = workplace + tile + "_" + year + ".shp"
+        if not path.exists(finalPoly):
+            for img in imgList:
+                
+            ## Add all the burnscar polygons from the same tile/year:
+                
+                if img.endswith("_final.tif") and img.startswith(tile+"_"+year):
                     img_list.append(img)
                     img_ds = gdal.Open(workplace + img).ReadAsArray()
                     dataset = gdal.Open(workplace + img)
                     geotransform = dataset.GetGeoTransform()
-                    max_list.append(img_ds)
-        
-        print("\n In", year, len(array_list), "images analysed:")                
-        
-        if len(min_list) >= 1 :
-            addin = np.stack(min_list, axis=0 )
-            Min = np.nanmin(addin, axis=0)      
-            if len(max_list) >= 1 :
-                addax = np.stack(max_list, axis=0 )
-                Max = np.nanmax(addax, axis=0)                
-                Diff = Max-Min  
-                MAX = workplace + tile + "_" + year + "_Max.tif"
-                MIN = workplace + tile + "_" + year + "_Min.tif"
-                if not path.exists(MIN):
-                    ArraytoRaster(Min, MIN)
-                    ArraytoRaster(Max, MAX)
-                Diff[Diff>=0.6]= np.nan
-                Diff[Diff<=0.1]= np.nan
-                Diff[Diff<=0.6]= 1
-                Diff[Diff==np.nan]=0
-                DIFF = workplace + tile + "_" + year + "_Diff.tif"
-                if not path.exists(DIFF):
-                    ArraytoRaster(Diff, DIFF)
-                    
-        if len(array_list) >= 1 :  
-            array_out = np.nansum(array_list, axis=0)
-            if year != "2015" and year != "2016":
-                finalArray = array_out * Diff
-            else:
-                finalArray = array_out
+                    img_ds[img_ds==np.nan]=0
+                    array_list.append(img_ds)
             
-            finalArray[finalArray<=0]=np.nan
-            addRaster = workplace + tile + "_" + year + "_ADD.tif"
-            if not path.exists(addRaster):
-                ArraytoRaster(finalArray, addRaster)
-            print("______ ", len(array_list), "results combined")
+            ## Calculate the difference between the min ndvi Jan-Jui/ the max ndvi Aug-Dec:
+                # if burn scar: positive dif of at least 0.1 but not higher than 0.6
+                
+                if year != "2015" and year != "2016" and year != "2017" and img.endswith("_ndvi.tif") and img.startswith(tile+"_"+year):
+                    n = len(tile)+5
+                    # print(img[n:n+2])
+                    if img[n:n+2] in months:
+                        # print(img, "in months")
+                        img_ds = gdal.Open(workplace + img).ReadAsArray()
+                        dataset = gdal.Open(workplace + img)
+                        geotransform = dataset.GetGeoTransform()
+                        min_list.append(img_ds)
+                    if img[n:n+2] not in months:
+                        # print(img, " not in months")
+                        img_list.append(img)
+                        img_ds = gdal.Open(workplace + img).ReadAsArray()
+                        dataset = gdal.Open(workplace + img)
+                        geotransform = dataset.GetGeoTransform()
+                        max_list.append(img_ds)
             
-            finalArray[finalArray>=2]=2        
-            addRasterpoly = workplace + tile + "_" + year + "_ADDpoly.tif"
-            if not path.exists(addRasterpoly):
-                ArraytoRaster(finalArray, addRasterpoly)
-            finalPoly = workplace + tile + "_" + year + ".shp"
-            if not path.exists(finalPoly):
-                Polygonize (addRasterpoly, finalPoly)
-            print("______ and polygonized")
+            print("\n In", year, len(array_list), "images analysed:")                
             
-            if year != "2015" and year != "2016":
-                print("___ Polygons present on one single date only discarded")
-                seedintersection (addRaster, finalPoly, 3.0)
-                FilterPolyArea (finalPoly,4000)
-            
-            img_list.sort()
-            for img in img_list:
-                timestamp(workplace+img, finalPoly)
-            print("______ Polygons time-stamped")   
+            if len(min_list) >= 1 :
+                addin = np.stack(min_list, axis=0 )
+                Min = np.nanmin(addin, axis=0)      
+                if len(max_list) >= 1 :
+                    addax = np.stack(max_list, axis=0 )
+                    Max = np.nanmax(addax, axis=0)                
+                    Diff = Max-Min  
+                    MAX = workplace + tile + "_" + year + "_Max.tif"
+                    MIN = workplace + tile + "_" + year + "_Min.tif"
+                    if not path.exists(MIN):
+                        ArraytoRaster(Min, MIN)
+                        ArraytoRaster(Max, MAX)
+                    Diff[Diff>=0.6]= np.nan
+                    Diff[Diff<=0.1]= np.nan
+                    Diff[Diff<=0.6]= 1
+                    Diff[Diff==np.nan]=0
+                    DIFF = workplace + tile + "_" + year + "_Diff.tif"
+                    if not path.exists(DIFF):
+                        ArraytoRaster(Diff, DIFF)
+                        
+            if len(array_list) >= 1 :  
+                array_out = np.nansum(array_list, axis=0)
+                if year != "2015" and year != "2016" and year != "2017":
+                    finalArray = array_out * Diff
+                else:
+                    finalArray = array_out
+                
+                finalArray[finalArray<=0]=np.nan
+                addRaster = workplace + tile + "_" + year + "_ADD.tif"
+                if not path.exists(addRaster):
+                    ArraytoRaster(finalArray, addRaster)
+                print("______ ", len(array_list), "results combined")
+                
+                finalArray[finalArray>=2]=2        
+                addRasterpoly = workplace + tile + "_" + year + "_ADDpoly.tif"
+                if not path.exists(addRasterpoly):
+                    ArraytoRaster(finalArray, addRasterpoly)
+                finalPoly = workplace + tile + "_" + year + ".shp"
+                if not path.exists(finalPoly):
+                    Polygonize (addRasterpoly, finalPoly)
+                print("______ and polygonized")
+                
+                if year != "2015" and year != "2016" and year != "2017":
+                    print("___ Polygons present on one single date only discarded")
+                    seedintersection (addRaster, finalPoly, 3.0)
+                    FilterPolyArea (finalPoly,4000)
+                
+                img_list.sort()
+                for img in img_list:
+                    timestamp(workplace+img, finalPoly)
+                print("______ Polygons time-stamped")   
          
     print("\n----------------------------------------")
     
