@@ -8,7 +8,11 @@ import os
 import glob
 from PIL import Image
 
-from flares_package.constants import DATA_DIR_PLOTS
+# Local imports
+try:
+    from wp4.constants import DATA_DIR_PLOTS
+except ImportError:
+    from constants import DATA_DIR_PLOTS
 
 OUTPUT_FOLDER = f'{DATA_DIR_PLOTS}/animation/'
 

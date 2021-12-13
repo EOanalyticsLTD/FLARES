@@ -299,7 +299,11 @@ def main():
 
         all_data = [existing_pollutant_dataset_cp] + new_data  # create list of all the datasets to combine
 
-        updated_dataset = xr.combine_nested(all_data, concat_dim="time")
+        # combine the datasets
+        updated_dataset = xr.combine_nested(all_data, concat_dim="time", combine_attrs='override')
+
+        # Convert the data to 64 bit float, otherwise lower values are rounded to 0
+        updated_dataset = updated_dataset.astype(np.float64)
 
         # Write the backup file & updated file as netcdf files
         existing_pollutant_dataset_cp.to_netcdf(f"{DATA_DIR_GFAS}/temp/{dataset_name}_backup.nc")

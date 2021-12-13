@@ -9,8 +9,10 @@ from numpy import datetime64
 from datetime import timedelta
 
 # Local imports
-from wp4.constants import DB_HOST, DB_NAME, DB_USER, DB_PASS, DATA_DIR_CAMS, POLLUTANTS
-from wp4.processing.bounding_box import bounding_box
+try:
+    from wp4.constants import DB_HOST, DB_NAME, DB_USER, DB_PASS, DATA_DIR_CAMS_AN, POLLUTANTS
+except ImportError:
+    from constants import DB_HOST, DB_NAME, DB_USER, DB_PASS, DATA_DIR_CAMS_AN, POLLUTANTS
 
 
 def _apply_fe_mask(ds):
@@ -23,7 +25,7 @@ def _apply_fe_mask(ds):
     """
 
     # initiate boolean layer named fire mask
-    fire_mask = xr.open_dataset(Path(DATA_DIR_CAMS).joinpath('fire_mask.nc')).copy()
+    fire_mask = xr.open_dataset(Path(DATA_DIR_CAMS_AN).joinpath('fire_mask.nc')).copy()
     ds[list(ds.data_vars.keys())[0]] = ds[list(ds.data_vars.keys())[0]].where(cond=fire_mask['fire_mask'])
 
     return ds
@@ -45,7 +47,7 @@ def get_temporal_baseline(fe_lat, fe_long, timestamp, days, pollutant, years=[20
 
     # load dataset
     pollutant_variable_name = POLLUTANTS[pollutant]['CAMS']
-    ds_cams = xr.open_dataset(f"{DATA_DIR_CAMS}/{pollutant_variable_name}.nc").copy()
+    ds_cams = xr.open_dataset(f"{DATA_DIR_CAMS_AN}/{pollutant_variable_name}.nc").copy()
 
     if pd.to_datetime(timestamp.round('h')) not in ds_cams.time:
         print(f'No CAMS data available for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}.')
@@ -64,7 +66,7 @@ def get_temporal_baseline(fe_lat, fe_long, timestamp, days, pollutant, years=[20
         return None
 
     # Select data from the nearest CAMS cell to the fire event
-    ds_fe = ds_fe.sel(latitude=fe_lat, longitude=360 + fe_long, method='nearest')
+    ds_fe = ds_fe.sel(latitude=fe_lat, longitude=fe_long, method='nearest')
 
     # mask data for other fire event that occured during the period of time used for the FE analysis
     if fire_mask:
@@ -75,7 +77,7 @@ def get_temporal_baseline(fe_lat, fe_long, timestamp, days, pollutant, years=[20
         # If the fire event did not occur on a leap day, data for all leap days are removed from the CAMS dataset
         ds_bs = ds_cams.sel(time=~((ds_cams.time.dt.month == 2) & (ds_cams.time.dt.day == 29)))
         # Select data from the nearest CAMS cell to the fire event
-        ds_bs = ds_bs.sel(latitude=fe_lat, longitude=360 + fe_long, method='nearest')
+        ds_bs = ds_bs.sel(latitude=fe_lat, longitude=fe_long, method='nearest')
 
         # Creates a list containing datasets for the specified timerange for the same dates that are being observed for
         # the fire event for all available years, excluding the year the fire event took place
@@ -87,7 +89,7 @@ def get_temporal_baseline(fe_lat, fe_long, timestamp, days, pollutant, years=[20
 
     else:
         # Select data from the nearest CAMS cell to the fire event
-        ds_bs = ds_cams.sel(latitude=fe_lat, longitude=360 + fe_long, method='nearest')
+        ds_bs = ds_cams.sel(latitude=fe_lat, longitude=fe_long, method='nearest')
 
         # Remove the year of the fire event from the list of years to use for the temporal baseline
         years = years.remove(year)
@@ -159,7 +161,7 @@ def test():
 
     query = """
         SELECT id, datetime, ST_X(geometry), ST_Y(geometry), source, location, reference, type, info
-        FROM public.fire_events
+        FROM public.all_fire_events
         WHERE reference = 'Aqua' OR reference = 'Terra'
     """
 
@@ -169,7 +171,7 @@ def test():
 
     pollutant = 'PM10'  # Can be any of 'CO', 'O3', 'NO', 'NO2', 'PM25', 'PM10', 'SO2'
 
-    for ind, fe in df_fire_events.tail(20).iterrows():
+    for ind, fe in df_fire_events.head(1).iterrows():
 
         try:
             df_baseline = get_temporal_baseline(
@@ -181,8 +183,11 @@ def test():
                 fire_mask=True
             )
 
+            print(df_baseline)
+
         except Exception as e:
             print(f'Skipping fire {ind} because of the following error: {e}')
+
 
 if __name__ == '__main__':
     test()

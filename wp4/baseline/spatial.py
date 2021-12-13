@@ -20,8 +20,15 @@ from sklearn import preprocessing
 from sklearn.neighbors import NearestNeighbors
 
 # Local imports
-from wp4.constants import POLLUTANTS, DB_HOST, DB_NAME, DB_USER, DB_PASS, DATA_DIR_ERA5, DATA_DIR_MERA, \
-    DATA_DIR_CAMS
+try:
+    from wp4.constants import POLLUTANTS, DB_HOST, DB_NAME, DB_USER, DB_PASS, DATA_DIR_ERA5, DATA_DIR_MERA, \
+        DATA_DIR_CAMS_AN
+except ImportError:
+    from constants import POLLUTANTS, DB_HOST, DB_NAME, DB_USER, DB_PASS, DATA_DIR_ERA5, DATA_DIR_MERA, \
+        DATA_DIR_CAMS_AN
+
+
+# TODO - Add possibility to use the reanalysis for the spatial baseline
 
 warnings.simplefilter("ignore", RuntimeWarning)
 
@@ -426,7 +433,7 @@ def _open_meteo_dataset(fe_timestamp: pd.Timestamp, hours: int, meteo_dataset: s
             )
         )
 
-        ds_meteo['longitude'] = round_(ds_meteo.longitude.values - 360, 2)
+        ds_meteo['longitude'] = round_(ds_meteo.longitude.values, 2)
 
         # resample xarray to match CAMS grid -- possible solution https://xesmf.readthedocs.io/en/latest/
         # Maybe better to just resample the entire dataset once, instead of every run
@@ -533,14 +540,16 @@ def perform_nn_search(df_fe: pd.DataFrame, df_clf: pd.DataFrame, columns: list, 
 def get_spatial_baseline(fe_lat: float,
                          fe_long: float,
                          timestamp: pd.Timestamp,
-                         days: int,
                          pollutant: str,
+                         days: int,
+                         hours: int = 24,
                          meteo_dataset: str = 'MERA',
                          min_distance_km: int = None,
                          max_distance_km: int = None,
                          upwind_downwind: str = None,
                          number_of_neighbours: int = 20,
                          mask_ocean: bool = False,
+                         raw_data: bool = False,
                          ) -> (pd.DataFrame, xr.Dataset, pd.DataFrame, pd.DataFrame):
     """
     Main function to calculate the spatial baseline, and get all the information related to the spatial baseline.
@@ -548,9 +557,11 @@ def get_spatial_baseline(fe_lat: float,
     :param fe_lat: latitude of the fire event.
     :param fe_long: longitude of the fire event.
     :param timestamp: timestamp of the fire event.
-    :param days: number of days to use for the time window around the fire event.
     :param pollutant: string indicating the pollutant for which to calculate the baseline for. Options are: 'CO','O3',
     'NO','NO'2,'PM'25,'PM'10,'SO'2.
+    :param days: number of days to use for the time window around the fire event.
+    :param hours: Number of hours to use as a time window before and after the fire event for selecting meteorological
+    data to determine the CAMS cells most similar to the cell closest to the fire event. Defaults to 24.
     :param meteo_dataset: string indicating which meteorological dataset to use - 'ERA5' for the era5 dataset and 'MERA'
     for the Met Éireann dataset. Default dataset is 'MERA', if not data available it switches to ERA5 automatically.
     :param min_distance_km: minimum distance (in km) from the fire event
@@ -559,17 +570,21 @@ def get_spatial_baseline(fe_lat: float,
     'upwind', 'downwind' or the default: None.
     :param number_of_neighbours: number of neighbours you want the Nearest Neighbour (NN) algorithm to find.
     :param mask_ocean: whether to mask ocean pixels for the NN search or not
+    :param raw_data: Flag, when True return the dataframe containing all the pollutant concentration values per pixel
     :return:
     df_baseline: pandas dataframe containing all the baseline information,
     ds_fe: xArray dataset containing all the feature information generated from the meteo data for the NN search,
     nn_result: pandas dataframe containing the result from the NN search and all the information for each match,
     df_fe_information: pandas dataframe containing all the information of the target pixel of the NN search
+
+    if raw_data is True:
+    df_pixel_data: Pandas dataframe containing the pollutant concentration per pixel for all the selected pixels.
     """
 
     # Next, derive the spatial baseline for the pixels returned by the nearest neighbour search
     # Load the CAMS dataset
     pollutant_variable_name = POLLUTANTS[pollutant]['CAMS']
-    ds_cams = xr.open_dataset(f"{DATA_DIR_CAMS}/{pollutant_variable_name}.nc").squeeze().copy()
+    ds_cams = xr.open_dataset(f"{DATA_DIR_CAMS_AN}/{pollutant_variable_name}.nc").squeeze().copy()
 
     if pd.to_datetime(timestamp.round('h')) not in ds_cams.time:
         print(f'No CAMS data available for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}.')
@@ -585,6 +600,7 @@ def get_spatial_baseline(fe_lat: float,
     df_classification, df_fe_information = get_data_nn(
         timestamp,
         fe_coords,
+        hours=hours,
         meteo_dataset=meteo_dataset
     )
 
@@ -635,7 +651,7 @@ def get_spatial_baseline(fe_lat: float,
     ))
 
     # Create a dataset containing the CAMS data closest to the location of the fire
-    ds_fe_loc = ds_fe.sel(longitude=360 + fe_long, latitude=fe_lat, method='nearest')
+    ds_fe_loc = ds_fe.sel(longitude=fe_long, latitude=fe_lat, method='nearest')
 
     # If no data return None
     if ds_fe.time.size == 0:
@@ -647,9 +663,14 @@ def get_spatial_baseline(fe_lat: float,
 
     for ind, pixel in nn_result.iterrows():
         # select the data for the pixel
-        pixel_data = ds_fe.sel(latitude=pixel['latitude'], longitude=360 + pixel['longitude'], method='nearest')
+        pixel_data = ds_fe.sel(latitude=pixel['latitude'], longitude=pixel['longitude'], method='nearest')
 
         df_pixel_data = pixel_data.to_dataframe()[[pollutant_variable_name]]  # convert the dataset to a pandas df
+
+        # in case there is no data for this pixel, move on with the next pixel
+        if len(df_pixel_data.dropna()) == 0:
+            continue
+
         df_pixel_data = df_pixel_data.rename(  # assign a unique column name based on the index
             columns={pollutant_variable_name: f'{pollutant_variable_name}_{ind}'}
         )
@@ -700,7 +721,10 @@ def get_spatial_baseline(fe_lat: float,
         'fire_event': list(ds_fe_loc.squeeze()[pollutant_variable_name].to_pandas())
     })
 
-    return df_baseline, ds_fe, nn_result, df_fe_information
+    if raw_data:
+        return df_pixel_data
+    else:
+        return df_baseline, ds_fe, nn_result, df_fe_information
 
 
 def test_baseline():
@@ -717,13 +741,20 @@ def test_baseline():
     conn.close()
 
     for ind, fe in df_fire_events.tail(20).iterrows():
+
         baseline_df, ds_fe, nn_result, df_fe_information = get_spatial_baseline(
-            fe['latitude'], fe['longitude'], fe['datetime'], 2, 'PM25',
+            fe_lat=fe['latitude'],
+            fe_long=fe['longitude'],
+            timestamp=fe['datetime'],
+            pollutant='PM25',
+            days=2,
             min_distance_km=50,
             max_distance_km=500,
             mask_ocean=True
             # loc_from_fe='upwind'
         )
+
+        print(df_fe_information)
 
 
 if __name__ == '__main__':
