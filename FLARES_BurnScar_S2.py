@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # Author: Emma Chalençon
-# Creation date: 23/11/2021
+# Creation date: 18/01/2021
 # Python version 3.8.5
 
 import fiona
@@ -29,7 +29,7 @@ def ArraytoRaster(array, outputRaster):
         outputRaster.SetGeoTransform(geotransform)
         outband = outputRaster.GetRasterBand(1)
         outband.WriteArray(array)                    
-        # outputRaster.SetProjection(srs.ExportToWkt())
+        outputRaster.SetProjection(srs.ExportToWkt())
         outputRaster.FlushCache()
         outputRaster = None
     return outputRaster
@@ -90,7 +90,7 @@ def ClipRwithS (shapefile, raster, outraster):
         with fiona.open(shapefile, "r") as shapefile:
             shapes = [feature["geometry"] for feature in shapefile]
         with rasterio.open(raster) as src:
-            out_image, out_transform = rasterio.mask.mask(src, shapes, crop=True)
+            out_image, out_transform = rasterio.mask.mask(src, shapes)
             out_meta = src.meta
         out_meta.update({"driver": "GTiff",
                           "height": out_image.shape[1],
@@ -469,7 +469,6 @@ tiles = ["A01","A02","A03","A04","A09","B01","B02","B03","B04","B05","B07",
           "I10","I11","I12","I14","I15","J03","J04","J05","J06","J07","J08",
           "J09","J10","J11","K03","K04","K05","K06","K07","K08","K09","K10",
           "K11"]
-
 tiles = ["K07"]
 
 for tile in tiles: 
@@ -653,10 +652,10 @@ for tile in tiles:
                     if not path.exists(MIN):
                         ArraytoRaster(Min, MIN)
                         ArraytoRaster(Max, MAX)
-                    Diff[Diff>=0.6]= np.nan
                     Diff[Diff<=0.1]= np.nan
-                    Diff[Diff<=0.6]= 1
-                    Diff[Diff==np.nan]=0
+                    Diff[Diff>=0.6]= np.nan 
+                    Diff[Diff>=0]= 1
+                    Diff[Diff==np.nan]=np.nan
                     DIFF = workplace + tile + "_" + year + "_Diff.tif"
                     if not path.exists(DIFF):
                         ArraytoRaster(Diff, DIFF)
