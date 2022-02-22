@@ -80,7 +80,7 @@ def calcFilteredNBR(f, datadict, sensordict, *args, **kwargs):
         outdir = os.path.join(workplace, 'sentinel2', tile)
     else:
         key1 = 'Landsat'
-        ndvidir = ieo.ndvidir
+        # ndvidir = ieo.ndvidir
         srdir = ieo.srdir
         outdir = os.path.join(workplace, 'landsat', tile)
         if basename[2:3] in ['8', '9']:
@@ -89,12 +89,12 @@ def calcFilteredNBR(f, datadict, sensordict, *args, **kwargs):
             key2 = '4-7'
     if not os.path.isdir(outdir):
         print(f'Creating output directory: {outdir}')
-    nbrdir = ndvidir.replace('NDVI', 'NBR')
-    ndvifile = os.path.join(ndvidir, f'{basename}.dat')
-    nbrfile = os.path.join(nbrdir, f'{basename}.dat')
-    if not os.path.isfile(nbrfile):
-        print('NBR file is missing, calculating.')
-        calcNDs(f, sensordict, calcNDTI = False)
+    # nbrdir = ndvidir.replace('NDVI', 'NBR')
+    # ndvifile = os.path.join(ndvidir, f'{basename}.dat')
+    # nbrfile = os.path.join(nbrdir, f'{basename}.dat')
+    # if not os.path.isfile(nbrfile):
+    #     print('NBR file is missing, calculating.')
+    #     calcNDs(f, sensordict, calcNDTI = False)
         # if basename.startswith('S'):
         #     bucket = 'sentinel2'
         # else:
@@ -118,10 +118,10 @@ def calcFilteredNBR(f, datadict, sensordict, *args, **kwargs):
     if basename.startswith('S2'):
         key1 = 'Sentinel2'
         key2 = 'bands'
-        ndvidir = ieo.Sen2ndvidir
+        # ndvidir = ieo.Sen2ndvidir
     else:
         key1 = 'Landsat'
-        ndvidir = ieo.ndvidir
+        # ndvidir = ieo.ndvidir
         if basename[2:3] in ['8', '9']:
             key2 = '8-9'
         else:
@@ -148,10 +148,10 @@ def calcFilteredNBR(f, datadict, sensordict, *args, **kwargs):
     swir1band = sensordict[key1][key2]['swir1']
     swir2band = sensordict[key1][key2]['swir2'] 
     
-    for b in [f, nbrfile, ndvifile]:
-        c, d = os.path.split(b)
-        e = os.path.basename(c)
-        parentrasters.append(f'{e}/{d}')
+    # for b in [f, nbrfile, ndvifile]:
+    c, d = os.path.split(f)
+    e = os.path.basename(c)
+    parentrasters.append(f'{e}/{d}')
     # if useqamask:
     #     if not os.path.isfile(qafile):
     #         usefmask = False
@@ -167,10 +167,10 @@ def calcFilteredNBR(f, datadict, sensordict, *args, **kwargs):
     #         else:
     #             parentrasters.append(os.path.basename(fmaskfile))
 
-    NDVIobj = gdal.Open(ndvifile)
-    ndvi = NDVIobj.GetRasterBand(1).ReadAsArray()
-    NBRobj = gdal.Open(nbrfile)
-    nbr = NBRobj.GetRasterBand(1).ReadAsArray()
+    # NDVIobj = gdal.Open(ndvifile)
+    # ndvi = NDVIobj.GetRasterBand(1).ReadAsArray()
+    # NBRobj = gdal.Open(nbrfile)
+    # nbr = NBRobj.GetRasterBand(1).ReadAsArray()
     refobj = gdal.Open(f)
 
     # Get file geometry
@@ -200,16 +200,16 @@ def calcFilteredNBR(f, datadict, sensordict, *args, **kwargs):
     red = refobj.GetRasterBand(redband).ReadAsArray()
     nir = refobj.GetRasterBand(nirband).ReadAsArray()
     swir1 = refobj.GetRasterBand(swir1band).ReadAsArray()
-    # swir2 = refobj.GetRasterBand(swir2band).ReadAsArray()
+    swir2 = refobj.GetRasterBand(swir2band).ReadAsArray()
     
     swir1 = swir1.astype('f4')
     blue = blue.astype('f4')
     green = green.astype('f4')
     red = red.astype('f4')
     nir = nir.astype('f4')
-    # swir2 = swir2.astype('f4')
-    ndvi = ndvi.astype('f4') / 10000
-    nbr = nbr.astype('f4') / 10000
+    swir2 = swir2.astype('f4')
+    # ndvi = ndvi.astype('f4') / 10000
+    # nbr = nbr.astype('f4') / 10000
     np.seterr(divide = 'ignore', invalid = 'ignore')
     
     white = blue + green + red
@@ -220,7 +220,7 @@ def calcFilteredNBR(f, datadict, sensordict, *args, **kwargs):
     swm[swm >= 0.4] = np.nan
     swm[swm < 0.4] = 1
     
-    # ndvi = (nir - red) / (nir + red)
+    ndvi = (nir - red) / (nir + red)
     ndvi_export = ndvi * swm
     print('Calculating filtered NDVI for scene {}.'.format(sceneid))
     NDVI = os.path.join(outdir, f'{basename}_NDVI.dat')
@@ -231,7 +231,7 @@ def calcFilteredNBR(f, datadict, sensordict, *args, **kwargs):
     ndvi[ndvi <= 0.25] = np.nan
     ndvi[ndvi <= 0.6] = 1
   
-    # nbr = (nir - swir2) / (nir + swir2)
+    nbr = (nir - swir2) / (nir + swir2)
     nbr[nbr >= 0.01] = np.nan
     nbr[nbr <= -0.05] = 2
     nbr[nbr < 0.01] = 1
@@ -243,8 +243,8 @@ def calcFilteredNBR(f, datadict, sensordict, *args, **kwargs):
 
     
     refobj = None
-    NBRobj = None
-    NDVIobj = None
+    # NBRobj = None
+    # NDVIobj = None
     nbrfilter = None
     blue = None
     green = None
@@ -760,7 +760,7 @@ def ClipRwithR(extent_raster, original_raster, clipped_raster):
         miny = maxy + geoTransform[5] * data.RasterYSize
         gdal.Translate(clipped_raster, original_raster, projWin = [minx, maxy, maxx, miny])
 
-def DeleteifCentroidin (file, mask, *args, **kwargs):
+def DeleteifCentroidin(file, mask, *args, **kwargs):
     sensor = kwargs.get('sensor', None)
     tile = kwargs.get('tile', None)
     if not os.path.isfile(file):
@@ -887,9 +887,9 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
         excludeyearlist = '2015,2016,2017', ignoreprocessed = False):
     
     excludeyearlist = excludeyearlist.split(',')
-    if len(excludeyearlist) > 0:
-        for i in range(len(excludeyearlist)):
-            excludeyearlist[i] = int(excludeyearlist[i])
+    # if len(excludeyearlist) > 0:
+    #     for i in range(len(excludeyearlist)):
+    #         excludeyearlist[i] = int(excludeyearlist[i])
     # Parameters
     # S2tiles = ieo.Sen2tiles # ["29UMT","28UGC","28UGD","29ULT","29UMA","29UMS","29UMT","29UMU","29UMV",
                  # "29UNA","29UNB","29UNT","29UNU","29UNV","29UPA","29UPB","29UPT","29UPU",
@@ -1016,7 +1016,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                             if len(days) > 0:
                                 for day in days:
                                     if verbose: print(f'Scanning {bucket}/SR/{tile}/{year}/{month}/{day}')
-                                    for d in ['SR', 'NDVI', 'NBR']:
+                                    for d in ['SR']: #, 'NDVI', 'NBR']:
                                         prefix = f'{d}/{tile}/{year}/{month}/{day}/'
                                         filelist = S3ObjectStorage.getbucketfoldercontents(bucket, prefix, '')
                                         if len(filelist) > 0:
@@ -1041,7 +1041,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                         
             # Now scan local directories for files
             if verbose: print('Scanning local directories for input files.')                                
-            for d in ['SR', 'NDVI', 'NBR']:
+            for d in ['SR']: #, 'NDVI', 'NBR']:
                 if d != 'SR':
                     scandir = os.path.join(os.path.dirname(srdir), d)
                 else:
@@ -1094,7 +1094,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                         days = sorted(datadict[tile][year][month].keys())
                         for day in days:
                             if verbose: print(f'Processing day {day}.')
-                            for d in ['SR', 'NDVI', 'NBR']:
+                            for d in ['SR']: #, 'NDVI', 'NBR']:
                                 if verbose: print(f'Processing data type: {d}.')
                                 if d in datadict[tile][year][month][day][bucket].keys():
                                     # Check to see if local files are present on buckets. If not, copy them over.
@@ -1144,7 +1144,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                 # print(datadict[tile][year][month][day][bucket]['SR']['local'])
                                 SRfile = [x for x in datadict[tile][year][month][day][bucket]['SR']['local'] if x.endswith('.dat')][0]
                             else:
-                                for d in ['SR', 'NDVI', 'NBR']:
+                                for d in ['SR']: #, 'NDVI', 'NBR']:
                                     dlflist = S3ObjectStorage.getFileList(bucket, prefix = f'{d}/{tile}/{year}/{month}/{day}/')
                                     if len(dlflist) > 0:
                                         for dlfname in dlflist:
@@ -1232,19 +1232,19 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                             
                             ## Calculate the difference between the min ndvi Jan-Jun/ the max ndvi Jul-Dec:
                             # if burn scar: positive dif of at least 0.1 but not higher than 0.6
-                            
-                            filelist = glob.glob(os.path.join(workplace, sensor.lower(), tile, f'*_{year}{month}{day}_{tile}_NDVI.dat'))
-                            if len(filelist) > 0:
-                                for f in filelist:
-                            # for f in datadict[tile][year][month][day][bucket]['filtered']['NDVI']:
-                                    img_ds = gdal.Open(f).ReadAsArray()
-                                    dataset = gdal.Open(f)
-                                    geotransform = dataset.GetGeoTransform()
-                                    img_ds[img_ds == np.nan] = 0
-                                    if month in minmonths:
-                                        min_list.append(img_ds)
-                                    else:
-                                        max_list.append(img_ds)
+                            if not year in excludeyearlist:
+                                filelist = glob.glob(os.path.join(workplace, sensor.lower(), tile, f'*_{year}{month}{day}_{tile}_NDVI.dat'))
+                                if len(filelist) > 0:
+                                    for f in filelist:
+                                # for f in datadict[tile][year][month][day][bucket]['filtered']['NDVI']:
+                                        img_ds = gdal.Open(f).ReadAsArray()
+                                        dataset = gdal.Open(f)
+                                        geotransform = dataset.GetGeoTransform()
+                                        img_ds[img_ds == np.nan] = 0
+                                        if month in minmonths:
+                                            min_list.append(img_ds)
+                                        else:
+                                            max_list.append(img_ds)
                     # monthly and daily stacking completed
                     
                     if len(min_list) >= 1:
@@ -1255,8 +1255,8 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                             Max = np.nanmax(addax, axis = 0)    
                         
                             Diff = Max - Min  
-                            MAX = os.path.join(workplace, sensor.lower(), tile, f'{tile}{year}_Max.tif')
-                            MIN = os.path.join(workplace, sensor.lower(), tile, f'{tile}{year}_Min.tif')
+                            MAX = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}_Max.tif')
+                            MIN = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}_Min.tif')
                             if not os.path.exists(MIN):
                                 ArraytoRaster(Min, MIN, geotransform)
                                 ArraytoRaster(Max, MAX, geotransform)
@@ -1264,7 +1264,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                             Diff[Diff <= 0.1] = np.nan
                             Diff[Diff >= 0.0] = 1
                             Diff[Diff == np.nan] = np.nan
-                            DIFF = os.path.join(workplace, sensor.lower(), tile, f'{tile}{year}_Diff.tif')
+                            DIFF = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}_Diff.tif')
                             if not os.path.exists(DIFF):
                                 ArraytoRaster(Diff, DIFF, geotransform)    
                     print("\n Tile {}: {} images analysed for {}.".format(tile, len(array_list), year))            
@@ -1276,16 +1276,16 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                         else:
                             finalArray = array_out
                         finalArray[finalArray <= 0] = np.nan
-                        addRaster = os.path.join(workplace, sensor.lower(), tile, f'{tile}{year}_ADD.tif')
+                        addRaster = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}_ADD.tif')
                         if not os.path.exists(addRaster):
                             ArraytoRaster(finalArray, addRaster, geotransform)
                         print("___", len(array_list), "results combined")
                         
                         finalArray[finalArray >= 2] = 2        
-                        addRasterpoly = os.path.join(workplace, sensor.lower(), tile, f'{tile}{year}_ADDpoly.tif')
+                        addRasterpoly = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}_ADDpoly.tif')
                         if not os.path.exists(addRasterpoly):
                             ArraytoRaster(finalArray, addRasterpoly, geotransform)
-                        finalPoly = os.path.join(workplace, sensor.lower(), tile, f'{tile}{year}.shp')
+                        finalPoly = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}.shp')
                         if not os.path.exists(finalPoly):
                             Polygonize (addRasterpoly, finalPoly)
                         print("___ and polygonized")
@@ -1311,22 +1311,31 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                     ieo.logerror(tile, e, errorfile = errorfile)        
             FA_mask = CreateConstantFalseAlarmsMask(tile, sensor, nancutoff = nancutoff, val1 = val1, val2 = val2)
             for year in years:
-                imgList = os.listdir(os.path.join(workplace, sensor.lower(), tile))
-                for img in imgList:
-                    if img.endswith(f'{tile}_{year}.shp'):
-                        DeleteifCentroidin (img, FA_mask)
+                yearshp = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}.shp')
+                if os.path.isfile(yearshp):
+                # imgList = os.listdir(os.path.join(workplace, sensor.lower(), tile))
+                # for img in imgList:
+                #     if img.endswith(f'{tile}_{year}.shp') and os.path.isfile(img):
                         print(f'Tile {tile}: {year} - filtering results for constant false alarms.')
-                        outputBufferfn = os.path.join(workplace, sensor.lower(), tile, img[:-4] + "_final.shp")
+                        DeleteifCentroidin (yearshp, FA_mask)
+                        outputBufferfn = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}_final.shp')
                         if not os.path.exists(outputBufferfn):
-                            createBuffer0(os.path.join(workplace, sensor.lower(), tile, img), outputBufferfn)
+                            createBuffer0(yearshp, outputBufferfn)
+                else: 
+                    print(f'ERROR: File missing: {yearshp}')
+                    ieo.logerror(tile, f'File missing: {yearshp}', errorfile = errorfile)
                         
             for year in years:
-                imgList = os.listdir(os.path.join(workplace, sensor.lower(), tile))
-                for img in imgList:
-                    if img.endswith(f'{tile}_{year}_final.shp') and year != "2015":
-                        mask = os.path.join(workplace, sensor.lower(), tile, img[:-12] + str(int(year[-2:]) - 1) + "_final.shp")
-                        print(f'Tile {tile}: filtering results for scars appearing in both {year - 1} and {year}.')
-                        DeleteifCentroidin (img, mask)
+                print(f'Processing year: {year}')
+                yearshp = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}_final.shp')
+                mask = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{int(year) - 1}_final.shp')
+                if year != '2015' and os.path.isfile(yearshp) and os.path.isfile(mask):
+                # imgList = os.listdir(os.path.join(workplace, sensor.lower(), tile))
+                # for img in imgList:
+                #     if img.endswith(f'{tile}_{year}_final.shp') and year != "2015":
+                        # mask = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{int(year) - 1}_final.shp')
+                        print(f'Tile {tile}: filtering results for scars appearing in both {int(year) - 1} and {year}.')
+                        DeleteifCentroidin (yearshp, mask)
             print("______ Results filtered to not report a burnscar two years in a row")
             
             print("----------------------------------------")
@@ -1341,7 +1350,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                 for year in datadict[tile].keys():
                     for month in datadict[tile][year].keys():
                         for day in datadict[tile][year][month].keys():
-                            for d in ['SR', 'NDVI', 'NBR']:
+                            for d in ['SR']: #, 'NDVI', 'NBR']:
                                 for f in datadict[tile][year][month][day][bucket][d]['local']:
                                     if verbose:
                                         if os.path.isfile(f):
@@ -1349,14 +1358,16 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                             os.remove(f)
                 print(f'Now moving processed files for tile {tile} to bucket wp3.1.')
                 tiledict = {}
-                tiledict['FAmasks'] = glob.glob(os.path.join(workplace, tile, 'sentinel2*.*'))
+                tiledict['FAmasks'] = glob.glob(os.path.join(workplace, sensor.lower(), tile, 'sentinel2*.*'))
                 tiledict['Year_summary'] = []
                 for n in [tile, 'S2']:
                     flist = glob.glob(os.path.join(workplace, sensor.lower(), tile, f'{n}*.*'))
                     if len(flist) > 0:
                         for f in flist: 
+                            basename = os.path.basename(f)
+                            
                             i = os.path.basename(f).find('_')
-                            if i in [-1, 7]:
+                            if basename[8:9] in ['_', '.'] and basename[:8] != 'sentinel2':
                                 tiledict['Year_summary'].append(f)
                             else:
                                 parts = os.path.basename(f).split('_')
