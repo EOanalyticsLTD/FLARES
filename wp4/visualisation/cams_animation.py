@@ -27,8 +27,7 @@ def create_animation(ds, title, folder, colormap='RdYlGn_r', min_val=None, max_v
     if max_val is None:
         max_val = ds.max().data
 
-    for i in ds.time.to_pandas().items():
-        i = i[0]
+    for i, _ in ds.time.to_pandas().items():
         hour = ds.sel(time=i)
 
         fig, ax = plt.subplots(figsize=(10, 10))

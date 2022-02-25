@@ -63,9 +63,9 @@ def mask_bounding_box(ds, latitude, longitude, halfside_km):
     bb = bounding_box(latitude, longitude, halfside_km)
 
     # select min and max longitude and latitude to select the cams data within the bounding box
-    min_lon = 360 + bb[1]
+    min_lon = bb[1]
     min_lat = bb[0]
-    max_lon = 360 + bb[3]
+    max_lon = bb[3]
     max_lat = bb[2]
 
     mask_lon = (ds.longitude >= min_lon) & (ds.longitude <= max_lon)
