@@ -1,13 +1,17 @@
 import os, glob
+import psycopg2
+import pandas as pd
 import xarray as xr
 import dask
 from pathlib import Path
+from datetime import datetime, timedelta
+from numpy import datetime64
 
 # Local imports
 try:
-    from wp4.constants import POLLUTANTS, DATA_DIR_CAMS_AN, DATA_DIR_CAMS_RE
+    from wp4.constants import POLLUTANTS, DATA_DIR_CAMS_AN, DATA_DIR_CAMS_RE, EXTENTS, DB_HOST, DB_NAME, DB_USER, DB_PASS
 except ImportError:
-    from constants import POLLUTANTS, DATA_DIR_CAMS_AN, DATA_DIR_CAMS_RE
+    from constants import POLLUTANTS, DATA_DIR_CAMS_AN, DATA_DIR_CAMS_RE, EXTENTS,  DB_HOST, DB_NAME, DB_USER, DB_PASS
 
 # Dask chunk config, to prevent warnings. Setting this to True seems to make processing a small bit faster.
 dask.config.set({"array.slicing.split_large_chunks": True})
@@ -65,3 +69,85 @@ def create_dataset(pollutant: str, pref: str = "reanalysis", years: list = None)
         final_dataset = final_dataset.squeeze(drop=True)
 
     return final_dataset
+
+
+def get_timeseries_fire(pollutant, timestamp, fe_long, fe_lat, days=5, years=None, extent='IRELAND'):
+
+    if not EXTENTS[extent]['WEST'] <= fe_long <= EXTENTS[extent]['EAST']:
+        # print(
+        #     f'Longitude: {fe_long} is outside of the study area extent: {EXTENTS[extent]["WEST"]} - {EXTENTS[extent]["EAST"]}')
+        return None
+
+    if not EXTENTS[extent]['SOUTH'] <= fe_lat <= EXTENTS[extent]['NORTH']:
+        # print(
+        #     f'Latitude: {fe_lat} is outside of the study area extent: {EXTENTS[extent]["SOUTH"]} - {EXTENTS[extent]["NORTH"]}')
+        return None
+
+    # check years param
+    if years is None:
+        years=[2015, 2016, 2017, 2018, 2019, 2020, 2021]
+
+    # For each year that the fire did not take place
+    # load dataset
+    pollutant_variable_name = POLLUTANTS[pollutant]['CAMS']
+    ds_cams = create_dataset(pollutant, years=years).copy()[pollutant_variable_name]
+
+    if pd.to_datetime(timestamp.round('h')) not in ds_cams.time:
+        # print (f'No CAMS data available for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}.')
+        return None
+
+    fe_year = timestamp.year  # Get the year that fire event took place
+
+    # Select CAMS data for the period of observation
+    ds_fe = ds_cams.sel(time=slice(
+        timestamp.replace(minute=0) - timedelta(days=days),
+        timestamp.replace(minute=0) + timedelta(days=days)
+    ))
+
+    # If no data return None
+    if ds_fe.time.size == 0:
+        return None
+
+    # Select data from the nearest CAMS cell to the fire event
+    ds_fe = ds_fe.sel(latitude=fe_lat, longitude=fe_long, method='nearest')
+
+    def hour_from_event(x):
+        """Function to calculate hour difference from a fire event"""
+
+        x_time = x.values[0]  # select the timestamp
+
+        if type(x_time) == datetime64:  # if the datetime is a numpy datetime64 object convert to datetime object
+            x_time = pd.Timestamp(x_time)
+
+        hours = x_time - timestamp.replace(minute=0)  # difference between the hour and the fire event timestamp
+        return int(hours.total_seconds() / 3600)  # calculate the number of hours
+
+    # Creates a hourly datetime range to use as index
+    df_index_time = pd.date_range(
+        timestamp.replace(minute=0) - timedelta(days=days),
+        timestamp.replace(minute=0) + timedelta(days=days),
+        freq='h'
+    ).tolist()
+
+    # Calculates how far from fire event each datetime object occurs
+    df_hour_from_event = pd.DataFrame({'time': df_index_time}).apply(hour_from_event, 1)
+
+    ar_fire_event = ds_fe.squeeze(drop=True).to_pandas()
+
+    if df_hour_from_event.index.size != len(ar_fire_event):
+
+        # combined dataframe based on datetime index, missing dates will have NA col values
+        df_fill = pd.DataFrame(index=df_index_time)
+        df_fe = pd.DataFrame(ds_fe.squeeze().to_pandas(), columns=[ds_fe.name], index=ds_fe.time)
+        df_filled = df_fill.join(df_fe)
+
+        # convert to list
+        ar_fire_event = df_filled[ds_fe.name].tolist()
+
+    df = pd.DataFrame({
+        'time': df_index_time,
+        'hour_from_event': df_hour_from_event.tolist(),
+        'fire_event': ar_fire_event
+    })
+
+    return df

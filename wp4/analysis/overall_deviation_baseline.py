@@ -283,7 +283,31 @@ def main(options):
                     f'Parameter for source "{t}" is unknown, please use one of {list(fire_type.keys())}')
                 return None
 
+    if options.ref is None or options.source == 'media':
+        query += sources[options.source]
 
+    else:
+        references = references[options.source]
+
+        for ind, ref in enumerate(options.ref):
+
+            source_string = references[ref.lower()]
+
+            if ind == 0:
+                query += f"""WHERE {source_string}"""
+            else:
+                query += f"""OR {source_string}"""
+
+    if options.source == 'fb' and options.type:
+
+        for ind, tp in enumerate(options.type):
+
+            source_string = fire_type[tp.lower()]
+
+            if ind == 0:
+                query += f"""AND {source_string}"""
+            else:
+                query += f"""OR {source_string}"""
 
     df_fire_events = load_fire_events(query)
 
