@@ -66,6 +66,8 @@ def run_analysis(df_fire_events, pollutants, baseline, days=5):
 
         for ind, fe in df_fire_events.iterrows():  # iterate over the fire event dataframe
 
+            print(fe['datetime'])
+
             # initiate the dataframes that will contain the data
             df_fire_event_conc = None
             df_fire_temporal_baseline = None
@@ -82,6 +84,10 @@ def run_analysis(df_fire_events, pollutants, baseline, days=5):
                     days=days,
                     pollutant=pol,
                 )
+
+                if df_fe is None:
+                    continue
+
 
                 if df_fire_event_conc is None:
 
@@ -374,10 +380,10 @@ def main(options):
         logging.error('No fire events found in database')
         return None
 
-    try:
-        run_analysis(df_fire_events, pollutants, baseline)
-    except Exception as e:
-        logging.error(f'ERROR - Processing {baseline} aborted. ERROR: {e}')
+    # try:
+    run_analysis(df_fire_events, pollutants, baseline)
+    # except Exception as e:
+    #     logging.error(f'ERROR - Processing {baseline} aborted. ERROR: {e}')
 
     logging.info(f'Processing {baseline} completed.')
 

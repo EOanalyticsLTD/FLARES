@@ -151,3 +151,37 @@ def get_timeseries_fire(pollutant, timestamp, fe_long, fe_lat, days=5, years=Non
     })
 
     return df
+
+
+if __name__ == '__main__':
+
+    conn = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=DB_PASS, host=DB_HOST)
+
+    query = """
+                SELECT id, datetime, ST_X(geometry), ST_Y(geometry), source, location, reference, type, info
+                FROM public.all_fire_events
+            """
+
+    df_fire_events = pd.read_sql_query(query, con=conn).rename(columns={'st_x': 'longitude', 'st_y': 'latitude'})
+
+    conn.close()
+
+    pollutant = 'NO2'  # Can be any of 'CO', 'O3', 'NO', 'NO2', 'PM25', 'PM10', 'SO2'
+
+    for ind, fe in df_fire_events.iterrows():
+
+        try:
+            df_baseline = get_timeseries_fire(
+                fe_lat=fe['latitude'],
+                fe_long=fe['longitude'],
+                timestamp=fe['datetime'],
+                days=5,
+                pollutant=pollutant,
+            )
+
+            print(df_baseline)
+
+        except Exception as e:
+            raise
+            print(f'Skipping fire {ind} because of the following error: {e}')
+
