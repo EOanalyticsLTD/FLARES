@@ -467,7 +467,7 @@ def get_data_nn(fe_timestamp: pd.Timestamp, fe_coords: dict, meteo_dataset: str 
     """
 
     if (fe_timestamp >= datetime(year=2019, month=8, day=30)) and (meteo_dataset == 'MERA'):
-        print('No MERA data available after 31-08-2019, using ERA5 dataset instead')
+        # print('No MERA data available after 31-08-2019, using ERA5 dataset instead')
         meteo_dataset = 'ERA5'
 
     # Load the meteorological dataset for the specified time period
@@ -587,13 +587,11 @@ def get_spatial_baseline(fe_lat: float,
     """
 
     if not EXTENTS[extent]['WEST'] <= fe_long <= EXTENTS[extent]['EAST']:
-        print(
-            f'Longitude: {fe_long} is outside of the study area extent: {EXTENTS[extent]["WEST"]} - {EXTENTS[extent]["EAST"]}')
+        #    f'Longitude: {fe_long} is outside of the study area extent: {EXTENTS[extent]["WEST"]} - {EXTENTS[extent]["EAST"]}')
         return None
 
     if not EXTENTS[extent]['SOUTH'] <= fe_lat <= EXTENTS[extent]['NORTH']:
-        print(
-            f'Latitude: {fe_lat} is outside of the study area extent: {EXTENTS[extent]["SOUTH"]} - {EXTENTS[extent]["NORTH"]}')
+        #    f'Latitude: {fe_lat} is outside of the study area extent: {EXTENTS[extent]["SOUTH"]} - {EXTENTS[extent]["NORTH"]}')
         return None
 
     # Next, derive the spatial baseline for the pixels returned by the nearest neighbour search
@@ -606,7 +604,7 @@ def get_spatial_baseline(fe_lat: float,
     ds_cams = create_dataset(pollutant, years=years)
 
     if ds_cams is None:
-        print(f'No CAMS data available for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}.')
+        # print(f'No CAMS data available for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}.')
         if raw_data:
             return None
         else:
@@ -677,7 +675,7 @@ def get_spatial_baseline(fe_lat: float,
 
     # If no data return None
     if ds_fe.time.size == 0:
-        print(f'No CAMS data available for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}.')
+        # print(f'No CAMS data available for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}.')
         return None, None, None, None
 
     # Now iterate over the pixels returned by the nearest neighbour search and store the data in a pandas df
@@ -731,7 +729,7 @@ def get_spatial_baseline(fe_lat: float,
     df_hour_from_event = pd.DataFrame({'time': df_index_time}).apply(hour_from_event, 1)
 
     if df_hour_from_event.index.size != df_index.size:
-        print(f'Missing CAMS data for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}. Baseline calculation stopped.')
+        # print(f'Missing CAMS data for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}. Baseline calculation stopped.')
         if raw_data:
             return None
         else:

@@ -10,6 +10,7 @@ import psycopg2
 import pandas as pd
 from pathlib import Path
 import argparse
+import datetime
 import logging
 
 # Local imports
@@ -58,29 +59,22 @@ def load_fire_events():
 def run_analysis(df_fire_events, pollutants, baseline, days=5):
     """Runs the analysis for all the fire events in given dataframe"""
 
-    # start logging.
-    logging.basicConfig(
-        filename=OUTPUT_DIR.joinpath(f'{baseline}.log'),
-        filemode='a',
-        format='%(name)s - %(levelname)s - %(message)s',
-        level=logging.INFO
-    )
-
     # loop through the pollutants
     for pol in pollutants:
-
         logging.info(f'Processing started for: {pol}')
-
-        # initiate the dataframes that will contain the data
-        df_fire_event_conc = None
-        df_fire_temporal_baseline = None
-        df_fire_spatial_baseline = None
-        df_fire_spatiotemporal_baseline = None
+        start_datetime = datetime.datetime.now()
+        logging.info(f"Processing started on: {start_datetime.strftime('%b %d -  %H:%M')}")
 
         # variable to count the completed iterations
         completed = 0
 
-        for ind, fe in df_fire_events.iterrows():  # iterate over the fire event dataframe
+        for ind, fe in df_fire_events.head(5).iterrows():  # iterate over the fire event dataframe
+
+            # initiate the dataframes that will contain the data
+            df_fire_event_conc = None
+            df_fire_temporal_baseline = None
+            df_fire_spatial_baseline = None
+            df_fire_spatiotemporal_baseline = None
 
             # for spatial baseline, this will also create the fire event concentration dataframe
             if baseline == 'spatial':
@@ -111,7 +105,7 @@ def run_analysis(df_fire_events, pollutants, baseline, days=5):
                     cols = metadata + df_baseline_spatial['hour_from_event'].tolist()
                     df_fire_event_conc = pd.DataFrame(columns=cols)
 
-                df_fire_event_conc.loc[len(df_fire_event_conc)] = fe.tolist() + df_baseline_spatial['fire_event'].tolist()
+                df_fire_event_conc.loc[len(df_fire_event_conc)] = fe.tolist() + df_baseline_spatial['fire_event'].round(6).tolist()
 
                 if df_fire_spatial_baseline is None:
 
@@ -188,49 +182,57 @@ def run_analysis(df_fire_events, pollutants, baseline, days=5):
 
             completed += 1
 
-            # save the data as csv every 10 iterations.
-            if completed > 0 and completed%10 == 0:
-                if df_fire_event_conc is not None:
+            if df_fire_event_conc is not None:
 
-                    if len(df_fire_event_conc) < 0:
-                        continue
+                if len(df_fire_event_conc) < 0:
+                    continue
 
-                    df_fire_event_conc.to_csv(
-                        OUTPUT_DIR.joinpath(f'{pol}_CAMS_fe_concentration.csv'),
-                        index=False
-                    )
+                df_fire_event_conc.to_csv(
+                    OUTPUT_DIR.joinpath(f'{pol}_CAMS_fe_concentration.csv'),
+                    index=False,
+                    mode='a',
+                    header=False,
+                )
 
-                if df_fire_temporal_baseline is not None:
+            if df_fire_temporal_baseline is not None:
 
-                    if len(df_fire_temporal_baseline) < 0:
-                        continue
+                if len(df_fire_temporal_baseline) < 0:
+                    continue
 
-                    df_fire_temporal_baseline.to_csv(
-                        OUTPUT_DIR.joinpath(f'{pol}_CAMS_fe_temporal_baseline.csv'),
-                        index=False
-                    )
+                df_fire_temporal_baseline.to_csv(
+                    OUTPUT_DIR.joinpath(f'{pol}_CAMS_fe_temporal_baseline.csv'),
+                    index=False,
+                    mode='a',
+                    header=False,
+                )
 
-                if df_fire_spatial_baseline is not None:
+            if df_fire_spatial_baseline is not None:
 
-                    if len(df_fire_spatial_baseline) < 0:
-                        continue
+                if len(df_fire_spatial_baseline) < 0:
+                    continue
 
-                    df_fire_spatial_baseline.to_csv(
-                        OUTPUT_DIR.joinpath(f'{pol}_CAMS_fe_spatial_baseline.csv'),
-                        index=False
-                    )
+                df_fire_spatial_baseline.to_csv(
+                    OUTPUT_DIR.joinpath(f'{pol}_CAMS_fe_spatial_baseline.csv'),
+                    index=False,
+                    mode='a',
+                    header=False,
+                )
 
-                if df_fire_spatiotemporal_baseline is not None:
+            if df_fire_spatiotemporal_baseline is not None:
 
-                    if len(df_fire_spatiotemporal_baseline) < 0:
-                        continue
+                if len(df_fire_spatiotemporal_baseline) < 0:
+                    continue
 
-                    df_fire_spatiotemporal_baseline.to_csv(
-                        OUTPUT_DIR.joinpath(f'{pol}_CAMS_fe_spatiotemporal_baseline.csv'),
-                        index=False
-                    )
+                df_fire_spatiotemporal_baseline.to_csv(
+                    OUTPUT_DIR.joinpath(f'{pol}_CAMS_fe_spatiotemporal_baseline.csv'),
+                    index=False
+                )
 
-                logging.info(f'Saving {baseline} data, currently {completed} fire events completed.')
+            logging.info(f'Saving {baseline} data, currently {completed} fire events completed.')
+        end_datetime = datetime.datetime.now()
+        time_dif = end_datetime - start_datetime
+        logging.info(f"Processing Completed on: {end_datetime.strftime('%b %d -  %H:%M')}")
+        logging.info(f"Processing Time: {time_dif.seconds/60} minutes")
 
 
 def main(options):
@@ -241,30 +243,43 @@ def main(options):
     pollutants = options.pollutants
     baseline = options.baseline
 
+    # start logging.
+    logging.basicConfig(
+        filename=OUTPUT_DIR.joinpath(f'{baseline}.log'),
+        filemode='a',
+        format='%(name)s - %(levelname)s - %(message)s',
+        level=logging.INFO
+    )
+
     for pol in pollutants:
         if pol == 'all':  # if option 'all' is given use all the pollutant keys
             pollutants = list(POLLUTANTS.keys())
         elif pol not in list(POLLUTANTS.keys()):
-            print(
+            logging.error(
                 f'Parameter for pollutants {pol} is unknown, please use one of {list(POLLUTANTS.keys())}')
             return None
 
-    print(f'Pollutants: {pollutants}')
-    print(f'Baseline: {baseline}')
+    logging.info(f'Pollutants: {pollutants}')
+    logging.info(f'Baseline: {baseline}')
 
     # check the baseline string
     if baseline not in ['spatial', 'temporal', 'spatiotemporal']:
-        print(
+        logging.error(
             f'Parameter for baseline {baseline} is unknown, please use one of "spatial", "temporal", "spatiotemporal"')
         return None
 
     df_fire_events = load_fire_events()
 
     if df_fire_events is None:
-        print('No fire events found in database')
+        logging.error('No fire events found in database')
         return None
 
-    run_analysis(df_fire_events, pollutants, baseline)
+    try:
+        run_analysis(df_fire_events, pollutants, baseline)
+    except Exception as e:
+        logging.error(f'ERROR - Processing {baseline} aborted. ERROR: {e}')
+
+    logging.info(f'Processing {baseline} completed.')
 
 
 if __name__ == '__main__':

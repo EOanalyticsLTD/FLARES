@@ -58,7 +58,7 @@ def create_dataset(pollutant: str, pref: str = "reanalysis", years: list = None)
     if len(filenames):
         final_dataset = xr.open_mfdataset(filenames)
     else:
-        print(f'No CAMS data available for {pollutant}')
+        # print(f'No CAMS data available for {pollutant}')
         return None
 
     if 'level' in list(final_dataset.dims):

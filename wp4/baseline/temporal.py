@@ -49,13 +49,13 @@ def get_temporal_baseline(fe_lat, fe_long, timestamp, days, pollutant, years=Non
     """
 
     if not EXTENTS[extent]['WEST'] <= fe_long <= EXTENTS[extent]['EAST']:
-        print(
-            f'Longitude: {fe_long} is outside of the study area extent: {EXTENTS[extent]["WEST"]} - {EXTENTS[extent]["EAST"]}')
+        #print(
+        #    f'Longitude: {fe_long} is outside of the study area extent: {EXTENTS[extent]["WEST"]} - {EXTENTS[extent]["EAST"]}')
         return None
 
     if not EXTENTS[extent]['SOUTH'] <= fe_lat <= EXTENTS[extent]['NORTH']:
-        print(
-            f'Latitude: {fe_lat} is outside of the study area extent: {EXTENTS[extent]["SOUTH"]} - {EXTENTS[extent]["NORTH"]}')
+        #print(
+        #    f'Latitude: {fe_lat} is outside of the study area extent: {EXTENTS[extent]["SOUTH"]} - {EXTENTS[extent]["NORTH"]}')
         return None
 
     # check years param
@@ -68,7 +68,7 @@ def get_temporal_baseline(fe_lat, fe_long, timestamp, days, pollutant, years=Non
     ds_cams = create_dataset(pollutant, years=years).copy()[pollutant_variable_name]
 
     if pd.to_datetime(timestamp.round('h')) not in ds_cams.time:
-        print(f'No CAMS data available for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}.')
+        #print(f'No CAMS data available for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}.')
         return None
 
     year = timestamp.year  # Get the year that fire event took place
