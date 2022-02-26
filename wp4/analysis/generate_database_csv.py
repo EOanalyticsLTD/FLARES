@@ -68,7 +68,7 @@ def run_analysis(df_fire_events, pollutants, baseline, days=5):
         # variable to count the completed iterations
         completed = 0
 
-        for ind, fe in df_fire_events.head(5).iterrows():  # iterate over the fire event dataframe
+        for ind, fe in df_fire_events.iterrows():  # iterate over the fire event dataframe
 
             # initiate the dataframes that will contain the data
             df_fire_event_conc = None
