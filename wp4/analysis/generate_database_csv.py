@@ -27,7 +27,7 @@ except ImportError:
     from baseline.temporal import get_temporal_baseline
     from baseline.spatiotemporal import get_spatiotemporal_baseline
 
-OUTPUT_DIR = Path(DATA_DIR_PLOTS).joinpath('testing_database_creation')
+OUTPUT_DIR = Path(DATA_DIR_PLOTS).joinpath('csv_database')
 
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
@@ -215,7 +215,7 @@ def run_analysis(df_fire_events, pollutants, baseline, days=5):
                     OUTPUT_DIR.joinpath(f'{pol}_CAMS_fe_temporal_baseline.csv'),
                     index=False,
                     mode='a',
-                    header=False,
+                    header=True,
                 )
 
             if df_fire_spatial_baseline is not None:
