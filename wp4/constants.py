@@ -40,8 +40,8 @@ DB_PASS = config['DATABASE']['password']
 DATA_DIR = pathlib.Path(config['DATA_DIR']['dir_path'])
 
 # DATASET DIRECTORIES
-DATA_DIR_CAMS_AN = DATA_DIR.joinpath("cams/").as_posix()
-DATA_DIR_CAMS_RE = DATA_DIR.joinpath("cams_reanalyses/").as_posix()
+DATA_DIR_CAMS_AN = DATA_DIR.joinpath("cams_nrt_analysis/").as_posix()
+DATA_DIR_CAMS_RE = DATA_DIR.joinpath("cams_reanalysis/").as_posix()
 DATA_DIR_ERA5 = DATA_DIR.joinpath("era5").as_posix()
 DATA_DIR_MERA = DATA_DIR.joinpath("mera/").as_posix()
 DATA_DIR_GFAS = DATA_DIR.joinpath("gfas/").as_posix()

@@ -26,13 +26,20 @@ DATASETS = {
         {
             'bucket':'cams-analysis',
             'filenames':[
-                'co_conc',
-                'no2_conc',
-                'no_conc',
-                'o3_conc',
-                'pm10_conc',
-                'pm2p5_conc',
-                'so2_conc',
+                # 'co_conc',
+                'CO',
+                # 'no_conc',
+                'NO',
+                # 'no2_conc',
+                'NO2',
+                # 'o3_conc',
+                'O3',
+                # 'pm10_conc',
+                'PM10',
+                # 'pm2p5_conc',
+                'PM25',
+                # 'so2_conc',
+                'SO2',
                 'pmwf_conc',
                 'fire_mask',
             ],
@@ -41,13 +48,20 @@ DATASETS = {
         {
             'bucket':'cams-reanalysis',
             'filenames':[
-                'co_conc',
-                'no2_conc',
-                'no_conc',
-                'o3_conc',
-                'pm10_conc',
-                'pm2p5_conc',
-                'so2_conc',
+                # 'co_conc',
+                'CO',
+                # 'no_conc',
+                'NO',
+                # 'no2_conc',
+                'NO2',
+                # 'o3_conc',
+                'O3',
+                # 'pm10_conc',
+                'PM10',
+                # 'pm2p5_conc',
+                'PM25',
+                # 'so2_conc',
+                'SO2',
             ],
         },
     DATA_DIR_ERA5:
@@ -181,6 +195,9 @@ def update_data():
 
         for file in s3_files:
 
+            print(file)
+            print(s3_bucket)
+
             try:
                 # initiate S3 client
                 s3_client = boto3.client(
@@ -202,7 +219,11 @@ def update_data():
 
             # Check last change on disk
             try:
-                mod_time = os.path.getmtime(Path(dir_path).joinpath(f'{file}.nc'))
+                try:
+                    mod_time = os.path.getmtime(Path(dir_path).joinpath(f'{file}.nc'))
+                except FileNotFoundError:
+                    mod_time = os.path.getmtime(Path(dir_path).joinpath(file))
+
                 last_mod_file = datetime.datetime.fromtimestamp(mod_time)
                 last_mod_file = pytz.utc.localize(last_mod_file)
             except FileNotFoundError:

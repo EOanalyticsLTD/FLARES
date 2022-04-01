@@ -13,10 +13,13 @@ import requests
 import psycopg2
 
 # Local imports
-from wp4.constants import DB_HOST, DB_NAME, DB_USER, DB_PASS
+try:
+    from wp4.constants import DB_HOST, DB_NAME, DB_USER, DB_PASS
+except ImportError:
+    from constants import DB_HOST, DB_NAME, DB_USER, DB_PASS
 
 
-def get_closest_active_epa_ground_station(lat, long, pollutant):
+def get_closest_active_epa_ground_station(lat, long, pollutant, quantity=3):
     """
         Function that extracts closest active EPA ground station
         :param lat: float, Latitude
@@ -45,18 +48,22 @@ def get_closest_active_epa_ground_station(lat, long, pollutant):
 
     df = pd.read_sql_query(  # Select the available information for the closest ground station
         f"""SELECT  *,
+                    ST_X(geometry),
+                    ST_Y(geometry),
                     ST_Distance(ST_SetSRID(ST_Point({long}, {lat}), 4326), ST_SetSRID(geometry, 4326), true) AS distance
                     FROM ground_stations
                     WHERE ground_stations.{pollutant_col} = true
                     ORDER BY ST_SetSRID(geometry, 4326)  <-> ST_SetSRID(ST_Point({long}, {lat}), 4326) 
-                    LIMIT 1;""",
+                    LIMIT {quantity};""",
         conn)
     conn.close()
+
+    df = df.rename(columns={'st_x': 'longitude', 'st_y': 'latitude'})
 
     return df
 
 
-def get_epa_data(df, timestamp, pollutant):
+def get_epa_data(epa_code, timestamp, pollutant, days=7):
     """
             Function that scrapes pollutant concentration data from AirQuality.ie for a given ground station and
             time period
@@ -71,19 +78,17 @@ def get_epa_data(df, timestamp, pollutant):
         'co_conc': 'CO',
         'o3_conc': 'O3',
         'no2_conc': 'NO2',
-        'pm2p5_conc': 'PM25',
+        'pm2p5_conc': 'PM2.5',
         'pm10_conc': 'PM10',
         'so2_conc': 'SO2',
     }
 
     # Set the date range for the period during which the fire event took place
-    begin_fire_event = timestamp - dt.timedelta(days=7)
-    end_fire_event = timestamp + dt.timedelta(days=7)
+    begin_fire_event = timestamp - dt.timedelta(days=days)
+    end_fire_event = timestamp + dt.timedelta(days=days)
 
     start_date_string = begin_fire_event.strftime('%d+%b+%Y')  # Convert to string to place in the url
     end_date_string = end_fire_event.strftime('%d+%b+%Y')
-
-    epa_code = df['epa_code'].iloc[0]  # code of the ground station
 
     # construct url to scrape
     url = f"https://airquality.ie/readings?station={epa_code}&dateFrom={start_date_string}&dateTo={end_date_string}"
@@ -126,7 +131,7 @@ def get_epa_data(df, timestamp, pollutant):
         data[name] = eval(data_columns[ind].replace('Date.UTC', '') + ']')
 
     for key in data:  #  construct a dictionary with the data
-        data[key] = {datetime.datetime(year=x[0][0], month=(x[0][1]) + 1, day=x[0][2], hour=12): x[1] for x in
+        data[key] = {datetime.datetime(year=x[0][0], month=(x[0][1]) + 1, day=x[0][2], hour=x[0][3]): x[1] for x in
                      data[key]}
 
     try:
@@ -235,3 +240,11 @@ def get_closest_ground_station_historical_data(lat, long, timestamp, pollutant, 
         return results
     else:
         return None  # if no data was retrieved return None
+
+
+def test():
+    get_epa_data("EPA-44", datetime.datetime(year=2021, month=4, day=15, hour=15), 'pm2p5_conc')
+
+
+if __name__ == '__main__':
+    test()

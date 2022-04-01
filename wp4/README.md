@@ -36,7 +36,7 @@ Quite a few of the datasets used for WP4 are obtained via three different APIs:
 * ERA5 reanalysis -> Climate Data Store 
 * GFAS FRP & Wildfire Flux -> ECMWF
 
-There are scripts running on the flares2 instance that automatically download and updata the data in the S3 buckets.   
+Scripts are no longer running on the flares2 instance to automatically download and updata the data in the S3 buckets as the period 2015 to 2021 is covered by the current data archive.   
 
 #### Climate Data Store API - [CLIMATE_DATA_STORE]
 Instructions on how to set up and use the api can be found [here](https://cds.climate.copernicus.eu/api-how-to). In the instructions they recommend to set up the .cdsapirc keyfile, however this gives problems when trying to download data from the Atmosphere Data Store, as it makes use of the same python package (called cdsapi) to make calls. Because of this, the credentials are entered when initiating the API client in the script. For this to work the key ***cds_key*** must be specified in the **CLIMATE_DATA_STORE** section of the configuration file. 
@@ -63,24 +63,29 @@ To check and download the latest version of the CAMS, ERA5 and GFAS datasets, yo
 <code> python setup_data_folder.py -u </code>
 
 ### Datasets 
-
-##### Area of Interest
+  
 The datasets mentioned in this section have all been cropped to the following extent: 
 
-##### CAMS European Air Quality Analysis   
-I downloaded data for recent years from the three-year rolling archive in the [Atmosphere Data Store](https://ads.atmosphere.copernicus.eu/cdsapp#!/dataset/cams-europe-air-quality-forecasts?tab=overview). Older data (2015-2017) was gathered from [this](http://www.regional.atmosphere.copernicus.eu/?&category=documentation&subensemble=macc_raq_resources) website. The datasets have been uplaoaded per pollutant to the ***cams-analysis*** S3 bucket. 
+##### CAMS European Air Quality NRT Analysis    
+I downloaded NRT Analysis data for recent years from the three-year rolling archive in the [Atmosphere Data Store](https://ads.atmosphere.copernicus.eu/cdsapp#!/dataset/cams-europe-air-quality-forecasts?tab=overview). The datasets have been uploaded per pollutant per year to the ***cams-analysis*** S3 bucket. 
 
-The following table provides an overview of the data available for each pollutant.    
+##### CAMS European Air Quality Analysis & Reanalysis
+For 2015 to 2018 Reanalysis data was downloaded from various sources like[this website](http://www.regional.atmosphere.copernicus.eu/?&category=documentation&subensemble=macc_raq_resources), [the ADS](https://ads.atmosphere.copernicus.eu/cdsapp#!/dataset/cams-europe-air-quality-reanalyses?tab=overview) and from an ECMWF ftp server.
+The datasets have been uploaded per pollutant per year to the ***cams-reanalysis*** S3 bucket.
+
+The following table provides an overview of the data available for each pollutant. For 2018 both NRT Analyses and Reanalyses are available. 
+I wrote a function to combine Reanalysis and Analysis datasets to cover as much of a desired time period between 2015 - 2021 as possible.
+This function will prioritise Reanalyses datasets over NRT Analyses datasets, if both are available.
 
 |Year|NO|NO<sub>2</sub>|O<sub>3</sub>|CO|PM2.5|PM10 |SO<sub>2</sub>|PM10 Wildfires  
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:| :---:|  
-| 2015 | no | yes | yes | no | yes | yes | no | no |  
-| 2016 | no | yes | yes | yes | yes | yes |  yes |no |  
-| 2017 | no | yes | yes | yes | yes | yes |  yes |no |  
-| 2018 | yes | yes | yes | yes | yes | yes |  yes |no |  
-| 2019 | yes | yes | yes | yes | yes | yes |  yes |no |  
-| 2020 | yes | yes | yes | yes | yes | yes |  yes  |yes |  
-| 2021 | yes | yes | yes | yes | yes | yes |  yes |yes |
+| 2015 | X | R | R | X | R | R | X | no |  
+| 2016 | X | R | R | R | R | R | R |no |  
+| 2017 | X | R | R | R | R | R | R |no |  
+| 2018 | R,A | R,A | R,A | R,A | R,A | R,A | R,A |no |  
+| 2019 | A | A | A | A | A | A | A | no |  
+| 2020 | A | A | A | A | A | A | A | A |  
+| 2021 | A | A | A | A | A | A | A | A |
 
 ##### fire mask
 
@@ -119,6 +124,7 @@ A PostgreSQL/PostGIS database has been set up containing the following data:\
 
 ##### Air Quality Measurements 
 Air Quality Measurements from various Ground Stations all over Ireland were provided by Stig. The data have been centralized per pollutant, each table containing ground measurements for the date & time per ground measurement station. Additionally, ground station information has been centralized in a the table ground_stations, including the geographical location of the ground station. 
+I also wrote some code to scrape recent AQ data from AirQuality.ie, you can find this in the processing folder. 
 
 ##### Fire Events 
 The data table ***fire_events*** contains all the fire events that were collected as part of WP2 and available on the Flares Drive. This table contains the following information for each fire event: 
@@ -140,8 +146,12 @@ flares_package
 |   setup_data_folder.py  	# script to set up data folders and download data
 │   config.cfg            	# configuration file
 |   requirements.txt      	# dependencies
+└───analysis                # some command line tools 
+│   │   generate_d..        # tool to generate the csvs for the WP4 deliverable
+│   │   overall_de..        # tool to calculate overall deviation from baselines
 └───baseline
 │   │   spatial.py        	# all the code for the spatial baseline derivation
+│   │   spatiotemporal.py   # all the code for the spatiotemporal baseline derivation
 │   │   temporal.py       	# all the code for the temporal baseline derivation
 └───notebooks   
 │   └───baseline          	# notebooks with example uses of the baseline functions

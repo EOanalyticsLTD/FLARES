@@ -4,6 +4,7 @@
 from datetime import timedelta
 from numpy import datetime64
 
+
 # Database
 import psycopg2, psycopg2.extras
 
@@ -13,35 +14,49 @@ import xarray as xr
 
 # Local imports
 try:
-    from wp4.constants import POLLUTANTS, DB_HOST, DB_NAME, DB_USER, DB_PASS, DATA_DIR_CAMS_AN
+    from wp4.constants import POLLUTANTS, DB_HOST, DB_NAME, DB_USER, DB_PASS, DATA_DIR_CAMS_AN, EXTENTS
     from wp4.baseline.spatial import get_spatial_baseline
+    from wp4.processing.helpers import create_dataset
 except ImportError:
-    from constants import POLLUTANTS, DB_HOST, DB_NAME, DB_USER, DB_PASS, DATA_DIR_CAMS_AN
+    from constants import POLLUTANTS, DB_HOST, DB_NAME, DB_USER, DB_PASS, DATA_DIR_CAMS_AN, EXTENTS
     from baseline.spatial import get_spatial_baseline
+    from processing.helpers import create_dataset
 
 
 def get_spatiotemporal_baseline(
-                         fe_lat: float,
-                         fe_long: float,
-                         timestamp: pd.Timestamp,
-                         days: int,
-                         pollutant: str,
-                         years=[2015, 2016, 2017, 2018, 2019, 2020, 2021],
-                         meteo_dataset: str = 'MERA',
-                         min_distance_km: int = None,
-                         max_distance_km: int = None,
-                         upwind_downwind: str = None,
-                         number_of_neighbours: int = 20,
-                         mask_ocean: bool = False,
-                         ) -> (pd.DataFrame, xr.Dataset, pd.DataFrame, pd.DataFrame):
+        fe_lat: float,
+        fe_long: float,
+        timestamp: pd.Timestamp,
+        days: int,
+        pollutant: str,
+        years=None,
+        meteo_dataset: str = 'MERA',
+        min_distance_km: int = None,
+        max_distance_km: int = None,
+        number_of_neighbours: int = 20,
+        mask_ocean: bool = False,
+        extent='IRELAND',) -> (pd.DataFrame, xr.Dataset, pd.DataFrame, pd.DataFrame):
+
+    if not EXTENTS[extent]['WEST'] <= fe_long <= EXTENTS[extent]['EAST']:
+        # print(
+        #     f'Longitude: {fe_long} is outside of the study area extent: {EXTENTS[extent]["WEST"]} - {EXTENTS[extent]["EAST"]}')
+        return None
+
+    if not EXTENTS[extent]['SOUTH'] <= fe_lat <= EXTENTS[extent]['NORTH']:
+        # print(
+        #     f'Latitude: {fe_lat} is outside of the study area extent: {EXTENTS[extent]["SOUTH"]} - {EXTENTS[extent]["NORTH"]}')
+        return None
+    # check years param
+    if years is None:
+        years=[2015, 2016, 2017, 2018, 2019, 2020, 2021]
 
     # For each year that the fire did not take place
     # load dataset
     pollutant_variable_name = POLLUTANTS[pollutant]['CAMS']
-    ds_cams = xr.open_dataset(f"{DATA_DIR_CAMS_AN}/{pollutant_variable_name}.nc").copy()
+    ds_cams = create_dataset(pollutant, years=years).copy()[pollutant_variable_name]
 
     if pd.to_datetime(timestamp.round('h')) not in ds_cams.time:
-        print(f'No CAMS data available for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}.')
+        # print (f'No CAMS data available for {POLLUTANTS[pollutant]["FULL_NAME"]} for timestamp: {timestamp}.')
         return None
 
     fe_year = timestamp.year  # Get the year that fire event took place
@@ -57,7 +72,7 @@ def get_spatiotemporal_baseline(
         return None
 
     # Select data from the nearest CAMS cell to the fire event
-    ds_fe_loc = ds_fe.sel(latitude=fe_lat, longitude=fe_long, method='nearest')
+    ds_fe = ds_fe.sel(latitude=fe_lat, longitude=fe_long, method='nearest')
 
     # # mask data for other fire event that occured during the period of time used for the FE analysis
     # if fire_mask:
@@ -76,21 +91,22 @@ def get_spatiotemporal_baseline(
             fe_long= fe_long,
             timestamp= prev_timestamp,
             pollutant= pollutant,
-            days=days,
+            days= days,
             hours = days*24,
             min_distance_km=min_distance_km,
             max_distance_km=max_distance_km,
             mask_ocean=mask_ocean,
-            raw_data=True
-            # loc_from_fe='upwind'
+            raw_data=True,
+            meteo_dataset=meteo_dataset,
+            number_of_neighbours=number_of_neighbours,
         )
 
-        historical_baselines[year] = raw_data
+        if raw_data is not None:
+            historical_baselines[year] = raw_data
 
     combined_data = None
 
-    for key in historical_baselines:
-        df_year = historical_baselines[key]
+    for key, df_year in historical_baselines.items():
         new_cols = {x:f'{key}_{x}' for x in df_year.columns}
         df_year = df_year.rename(columns=new_cols)
         df_year = df_year.reset_index().drop(columns=['time'])
@@ -130,6 +146,19 @@ def get_spatiotemporal_baseline(
     df_hour_from_event = pd.DataFrame({'time': df_index_time}).apply(hour_from_event, 1)
     df_hour_from_event.index = df_index
 
+    ar_fire_event = list(ds_fe.squeeze().to_pandas())
+
+    # in case of missing data, fill the missing hours with None values
+    if df_hour_from_event.index.size != len(ar_fire_event):
+
+        # combined dataframe based on datetime index, missing dates will have NA col values
+        df_fill = pd.DataFrame(index=df_index_time)
+        df_fe = pd.DataFrame(ds_fe.squeeze().to_pandas(), columns=[ds_fe.name], index=ds_fe.time)
+        df_filled = df_fill.join(df_fe)
+
+        # convert to list
+        ar_fire_event = df_filled[ds_fe.name].tolist()
+
     # combine stats into a single dataframe
     df_baseline = pd.DataFrame({
         'time': df_index_time,
@@ -139,13 +168,13 @@ def get_spatiotemporal_baseline(
         'spatiotemporal_baseline_lower_quartile': df_pixel_data_lower_quartile,
         'spatiotemporal_baseline_upper_quartile': df_pixel_data_upper_quartile,
         'spatiotemporal_baseline_std': df_pixel_data_std,
-        'fire_event': list(ds_fe_loc.squeeze()[pollutant_variable_name].to_pandas())
+        'fire_event': ar_fire_event
     })
 
     return df_baseline
 
 
-def test():
+def test_baseline():
     conn = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=DB_PASS, host=DB_HOST)
 
     query = """
@@ -157,12 +186,13 @@ def test():
     df_fire_events = pd.read_sql_query(query, con=conn).rename(columns={'st_x': 'longitude', 'st_y': 'latitude'})
     conn.close()
 
-    for ind, fe in df_fire_events.head(1).iterrows():
+    for ind, fe in df_fire_events[150:155].iterrows():
+        print(ind)
         df_baseline = get_spatiotemporal_baseline(
             fe_lat=fe['latitude'],
             fe_long=fe['longitude'],
             timestamp=fe['datetime'],
-            pollutant='PM25',
+            pollutant='NO',
             days=2,
             min_distance_km=50,
             max_distance_km=500,
@@ -173,7 +203,7 @@ def test():
 
 
 if __name__ == '__main__':
-    test()
+    test_baseline()
 
 
 
