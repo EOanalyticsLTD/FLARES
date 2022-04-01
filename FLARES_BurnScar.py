@@ -9,7 +9,7 @@
     # Support for S3 object storage 
 
 
-import os, sys, fiona, rasterio, argparse, glob
+import os, sys, fiona, rasterio, argparse, glob, datetime
 import rasterio.mask
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 # import geopandas as gpd
@@ -958,10 +958,13 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
         tiles = ieo.gettilelist()
     # tilelist = [] # this is for the list of tiles that actually contain data to be processed, tiles is a list of all tiles.
     if ignoreprocessed:
-        for tile in tiles:
-            if tile in processedtiles:
-                print(f'Tile {tile} has already been processed, skipping.')
-                tiles.pop(tiles.index(tile))
+        if len(processedtiles) > 0:
+            print(f'{len(processedtiles)} have already be processed. Removing any processed tiles from processing list.')
+            while any(tile in tiles for tile in processedtiles):
+                for tile in tiles:
+                    if tile in processedtiles:
+                        print(f'Tile {tile} has already been processed, skipping.')
+                        tiles.pop(tiles.index(tile))
     
     srs = osr.SpatialReference()   
     i = ieo.prjstr.find(':') + 1              
@@ -991,6 +994,10 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
             if len(filelist) > 0:
                 for f in filelist:
                     S3ObjectStorage.downloadfile(maskdir, 'airt.tiles.masks', f)
+            else:
+                print(f'ERROR: There is no mask file for tile {tile}. Removing tile from processing list.')
+                while tile in tiles:
+                    tiles.pop(tiles.index(tile))
     # fileList = os.listdir(infilePath)
     # featuredict = ieo.getfeaturedict(tiletype = ieo.NTS) 
     datadict = {}
@@ -1048,7 +1055,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                     scandir = srdir
                 if verbose: print(f'Scanning for {d} files.')       
                 if os.path.isdir(scandir):
-                    filelist = glob.glob(os.path.join(scandir, '*.*'))
+                    filelist = glob.glob(os.path.join(scandir, f'*_{tile}.*'))
                     if len(filelist) > 0:
                         for f in filelist:
                             if not f.endswith('.bak'):
@@ -1082,7 +1089,8 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
         if verbose: print('Now checking to make sure that input files are saved both remotely and locally, and if not, transfer to where needed after processing.')
         
         for tile in tiles:
-            if verbose: print(f'Processing tile {tile}.')    
+            tile_start_time = datetime.datetime.now()
+            if verbose: print(f'{tile_start_time.strftime("%Y/%m/%d %H:%M:%S")} :Processing tile {tile}.')    
             tile_workplace = os.path.join(workplace, sensor.lower(), tile)
             if not os.path.isdir(tile_workplace):
                 os.makedirs(tile_workplace)
@@ -1379,7 +1387,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                 if not day in tiledict[year][month].keys():
                                     tiledict[year][month][day] = []
                                 tiledict[year][month][day].append(f)
-                for key in tiledict.keys():
+                for key in sorted(tiledict.keys()):
                     if isinstance(tiledict[key], list):
                         if len(tiledict[key]) > 0:
                             S3ObjectStorage.copyfilestobucket(filelist = tiledict[key], bucket = 'wp3.1', targetdir = f'Results/Sentinel2/{tile}/{key}')
@@ -1387,8 +1395,8 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                 print(f'Deleting from disk: {f}')
                                 os.remove(f)
                     else:
-                        for month in tiledict[key].keys():
-                            for day in tiledict[key][month].keys():
+                        for month in sorted(tiledict[key].keys()):
+                            for day in sorted(tiledict[key][month].keys()):
                                  S3ObjectStorage.copyfilestobucket(filelist = tiledict[key][month][day], bucket = 'wp3.1', targetdir = f'Results/Sentinel2/{tile}/{key}/{month}/{day}')
                                  for f in tiledict[key][month][day]:
                                     try:
@@ -1406,7 +1414,9 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                 else:
                     with open(tfile, 'a') as output:
                         output.write(f',{tile}')
-                            
+            if verbose:
+                tile_end_time = datetime.datetime.now()
+                print(f'{tile_end_time.strftime("%Y/%m/%d %H:%M:%D")}: Tile {tile} finished processing. Execution time: {tile_end_time - tile_start_time}')
         print("\n----------------------------------------")
         print(f'Processing complete for {sensor}.')
     # if transfer:
