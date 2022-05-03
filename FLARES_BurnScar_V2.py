@@ -8,11 +8,13 @@
     # Inclusion of IEO library variables and functions
     # Support for S3 object storage 
 
-# 03 May 2022: 
+# 02 May 2022: 
     # Final modifications to version 1.0
     # Includes calculation of cloud-free rasters
+    # Start of version 1.1, with improved memory management
 
-# Version 1.0
+
+# Version 1.1
 
 import os, sys, fiona, rasterio, argparse, glob, datetime
 import rasterio.mask
@@ -1231,12 +1233,13 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
         # sensor/ bucket
             # tile
                 # year
-                array_list = []
-                min_list = []
-                max_list = []
+                array_out = []                
+                filecounter = 0
                 img_list = []
                 cf_array_list = []
                 cf_array = []
+                Min = []
+                Max = []
                 # try:
                 for month in datadict[tile][year].keys():
                     for day in datadict[tile][year][month].keys():
@@ -1250,7 +1253,12 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                 dataset = gdal.Open(f)
                                 geotransform = dataset.GetGeoTransform()
                                 img_ds[img_ds == np.nan] = 0
-                                array_list.append(img_ds)
+                                if len(array_out) == 0:
+                                    array_out = img_ds
+                                else:
+                                    array_out = np.nansum([array_out, img_ds], axis = 0)
+                                filecounter += 1
+                                # array_list.append(img_ds)
                         
                         ## Calculate the difference between the min ndvi Jan-Jun/ the max ndvi Jul-Dec:
                         # if burn scar: positive dif of at least 0.1 but not higher than 0.6
@@ -1264,9 +1272,15 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                     geotransform = dataset.GetGeoTransform()
                                     img_ds[img_ds == np.nan] = 0
                                     if month in minmonths:
-                                        min_list.append(img_ds)
+                                        if len(Min) == 0:
+                                            Min = img_ds
+                                        else:
+                                            Min = np.nanmin([Min, img_ds], axis = 0)
                                     else:
-                                        max_list.append(img_ds)
+                                        if len(Max) == 0:
+                                            Max = img_ds
+                                        else:
+                                            Max = np.nanmin([Max, img_ds], axis = 0)
                         
                         ## If calccloudfree = True, aggregate cloud-free image for year
                         if calccloudfree:
@@ -1301,17 +1315,17 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                         addRaster = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}_CF_ADD.tif')
                         if not os.path.isfile(addRaster):
                             ArraytoRaster(cf_array, addRaster, geotransform)
-                        print(f"______ len(array_list) cloud-free layer results combined for tile {tile} for the year {year}.")
+                        print(f"______ {filecounter} cloud-free layer results combined for tile {tile} for the year {year}.")
                         cf_array = None
                         
                         
                 
-                if len(min_list) >= 1:
-                    addin = np.stack(min_list, axis = 0 )
-                    Min = np.nanmin(addin, axis = 0)      
-                    if len(max_list) >= 1:
-                        addax = np.stack(max_list, axis = 0 )
-                        Max = np.nanmax(addax, axis = 0)    
+                if len(Min) >= 1:
+                    # addin = np.stack(min_list, axis = 0 )
+                    # Min = np.nanmin(addin, axis = 0)      
+                    if len(Max) >= 1:
+                        # addax = np.stack(max_list, axis = 0 )
+                        # Max = np.nanmax(addax, axis = 0)    
                     
                         Diff = Max - Min  
                         MAX = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}_Max.tif')
@@ -1326,10 +1340,10 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                         DIFF = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}_Diff.tif')
                         if not os.path.exists(DIFF):
                             ArraytoRaster(Diff, DIFF, geotransform)    
-                print("\n Tile {}: {} images analysed for {}.".format(tile, len(array_list), year))            
+                print(f"\n Tile {tile}: {filecounter} images analysed for {year}.") #.format(tile, len(array_list), year))            
                 
-                if len(array_list) >= 1:  
-                    array_out = np.nansum(array_list, axis = 0)
+                if len(array_out) >= 1:  
+                    # array_out = np.nansum(array_list, axis = 0)
                     if not year in excludeyearlist:
                         finalArray = array_out * Diff
                     else:
@@ -1338,7 +1352,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                     addRaster = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}_ADD.tif')
                     if not os.path.exists(addRaster):
                         ArraytoRaster(finalArray, addRaster, geotransform)
-                    print("___", len(array_list), "results combined")
+                    print(f"___ {filecounter} results combined")
                     
                     finalArray[finalArray >= 2] = 2        
                     addRasterpoly = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}_ADDpoly.tif')
