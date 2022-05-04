@@ -873,6 +873,30 @@ def CreateConstantFalseAlarmsMask(tile, sensor, *args, **kwargs):
         seedintersection (addRaster, finalPoly, 1.0) 
         return finalPoly
 
+def dlDailyDataFromBucket(tile, sensor, *args, **kwargs):
+    prefix = kwargs.get('prefix', 'Results/Sentinel2/')
+    bucket = kwargs.get('bucket', 'wp3.1')
+    outdir = kwargs.get('outdir', os.path.join(workplace, sensor, tile))
+    prefix = f'{prefix}{tile}/'
+    wp31tiledict = {}
+    years = S3ObjectStorage.getbucketfoldercontents(bucket, prefix, '/')
+    if len(years) > 2:
+        for year in years:
+            if not year in ['year_summary', 'FAmasks']:
+                wp31tiledict[year] = {}
+                months = S3ObjectStorage.getbucketfoldercontents(bucket, f'{prefix}{year}/', '/')
+                for month in months:
+                    wp31tiledict[year][month] = {}
+                    days = S3ObjectStorage.getbucketfoldercontents(bucket, f'{prefix}{year}/{month}/', '/')
+                    for day in days:
+                        wp31tiledict[year][month][day] = S3ObjectStorage.getbucketfoldercontents(bucket, f'{prefix}{year}/{month}/{day}/', '')
+                        if len(wp31tiledict[year][month][day]) > 0:
+                            for f in wp31tiledict[year][month][day]:
+                                outf = os.path.join(outdir, os.path.basename(f))
+                                if (not os.path.isfile(outf)) and (f.endswith('_CloudFree.tif') or f.endswith('_final.tif') or f.endswith('_NDVI.dat') or f.endswith('_NDVI.hdr')):
+                                    S3ObjectStorage.downloadfile(outdir, bucket, f)
+    return wp31tiledict
+                        
 def createBuffer0(inputfn, outputBufferfn):
     inputds = ogr.Open(inputfn)
     inputlyr = inputds.GetLayer()
@@ -1109,10 +1133,12 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
         
         for tile in tiles:
             tile_start_time = datetime.datetime.now()
-            if verbose: print(f'{tile_start_time.strftime("%Y/%m/%d %H:%M:%S")} :Processing tile {tile}.')    
+            if verbose: print(f'{tile_start_time.strftime("%Y/%m/%d %H:%M:%S")}: Processing tile {tile}.')    
             tile_workplace = os.path.join(workplace, sensor.lower(), tile)
             if not os.path.isdir(tile_workplace):
                 os.makedirs(tile_workplace)
+            if verbose: print(f'Downloading any data on bucket wp3.1 for tile {tile}.')
+            wp31dldict = dlDailyDataFromBucket(tile, sensor)
             for year in years:
                 if verbose: print(f'Processing year {year}.')
                 for month in months:
@@ -1120,6 +1146,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                         if verbose: print(f'Processing month {month}.')
                         days = sorted(datadict[tile][year][month].keys())
                         for day in days:
+                            processed = False
                             if verbose: print(f'Processing day {day}.')
                             for d in ['SR']: #, 'NDVI', 'NBR']:
                                 if verbose: print(f'Processing data type: {d}.')
@@ -1150,6 +1177,13 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                     else:
                                         datadict[tile][year][month][day][bucket][d]['local'] = []
                                     # Check to see if remote bucket files are present on locally. If not, copy them over.
+                                    
+                                    if year in wp31dldict.keys():
+                                        if month in wp31dldict[year].keys():
+                                            if day in wp31dldict[year][month].keys():
+                                                if len(wp31dldict[year][month][day]) > 0: 
+                                                    if any(x.endswith(f'{tile}_{year}{month}{day}_final.tif') for x in wp31dldict[year][month][day]) and any(x.endswith(f'{tile}_{year}{month}{day}_CloudFree.tif') for x in wp31dldict[year][month][day]):
+                                                        processed = True
                                     if 'remote' in datadict[tile][year][month][day][bucket][d].keys(): 
                                         for f in datadict[tile][year][month][day][bucket][d]['remote']:
                                             if d != 'SR':
@@ -1161,80 +1195,81 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                                 os.makedirs(localdir)
                                             basename = os.path.basename(f)
                                             localf = os.path.join(localdir, basename)
-                                            if not localf in datadict[tile][year][month][day][bucket][d]['local']:
+                                            if (not localf in datadict[tile][year][month][day][bucket][d]['local']) and (not processed):
                                                 print(f'Copying from bucket {bucket}: {f}')
                                                 S3ObjectStorage.downloadfile(localdir, bucket, f)
                                                 datadict[tile][year][month][day][bucket][d]['local'].append(localf)
                             
-                            finalraster = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}{month}{day}_final.tif')
-                            if any(x.endswith('.dat') for x in datadict[tile][year][month][day][bucket]['SR']['local']) and any(x.endswith('.hdr') for x in datadict[tile][year][month][day][bucket]['SR']['local']):
-                                # print(datadict[tile][year][month][day][bucket]['SR']['local'])
-                                SRfile = [x for x in datadict[tile][year][month][day][bucket]['SR']['local'] if x.endswith('.dat')][0]
-                            else:
-                                for d in ['SR']: #, 'NDVI', 'NBR']:
-                                    dlflist = S3ObjectStorage.getFileList(bucket, prefix = f'{d}/{tile}/{year}/{month}/{day}/')
-                                    if len(dlflist) > 0:
-                                        for dlfname in dlflist:
-                                            S3ObjectStorage.downloadfile(srdir.replace('SR', d), bucket, dlfname)
-                                            datadict[tile][year][month][day][bucket][d]['local'].append(os.path.join(os.path.dirname(srdir), d, os.path.basename(dlfname)))
-                                        SRfile = [x for x in datadict[tile][year][month][day][bucket]['SR']['local'] if x.endswith('.dat')][0]
-                            if not os.path.isfile(finalraster):   
-                                print("\n Let's start the delineation process:") 
-                                NBRFILTER, NDVI, datadict = calcFilteredNBR(SRfile, datadict, sensordict, calccloudfree = calccloudfree) 
-                                print(f"___ for {year}/{month}/{day}: NBR raster created and filtered with SWM NDVI and RGB")
+                            if not processed:
+                                finalraster = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}{month}{day}_final.tif')
+                                if any(x.endswith('.dat') for x in datadict[tile][year][month][day][bucket]['SR']['local']) and any(x.endswith('.hdr') for x in datadict[tile][year][month][day][bucket]['SR']['local']):
+                                    # print(datadict[tile][year][month][day][bucket]['SR']['local'])
+                                    SRfile = [x for x in datadict[tile][year][month][day][bucket]['SR']['local'] if x.endswith('.dat')][0]
+                                else:
+                                    for d in ['SR']: #, 'NDVI', 'NBR']:
+                                        dlflist = S3ObjectStorage.getFileList(bucket, prefix = f'{d}/{tile}/{year}/{month}/{day}/')
+                                        if len(dlflist) > 0:
+                                            for dlfname in dlflist:
+                                                S3ObjectStorage.downloadfile(srdir.replace('SR', d), bucket, dlfname)
+                                                datadict[tile][year][month][day][bucket][d]['local'].append(os.path.join(os.path.dirname(srdir), d, os.path.basename(dlfname)))
+                                            SRfile = [x for x in datadict[tile][year][month][day][bucket]['SR']['local'] if x.endswith('.dat')][0]
+                                if not os.path.isfile(finalraster):   
+                                    print("\n Let's start the delineation process:") 
+                                    NBRFILTER, NDVI, datadict = calcFilteredNBR(SRfile, datadict, sensordict, calccloudfree = calccloudfree) 
+                                    print(f"___ for {year}/{month}/{day}: NBR raster created and filtered with SWM NDVI and RGB")
+                                    
+                                    ## Mask the results with CLC2018 PRIME2 WFD and home-made constant false alarm mask
+                                    
+                                    Local_mask = os.path.join(maskdir, f'{tile}_mask.shp') #path the S2 masks 
+                                    NBR_masked = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}{month}{day}_NBR_masked.tif')
+                                    ClipRwithS(Local_mask, NBRFILTER, NBR_masked)
+                                    
+                                    ## Select only areas over 0.4ha 
+                                    
+                                    resultsRaster = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}{month}{day}_results.tif')
+                                    if not os.path.isfile(resultsRaster): 
+                                        res = gdal.Open(NBR_masked).ReadAsArray()
+                                        dataset = gdal.Open(NBR_masked)
+                                        geotransform = dataset.GetGeoTransform()
+                                        res = res.astype('f4')
+                                        res[res == 1] = 2
+                                        ArraytoRaster(res, resultsRaster, geotransform)
+                                        dataset = None 
+                                    resultsPoly = resultsRaster[:-4] + "_poly.shp" 
+                                    if not os.path.isfile(resultsPoly):
+                                        resultsPoly = Polygonize (resultsRaster, resultsPoly) # This was "outPoly" in the original code, but appeared nowehere else
+                                    print(f"___ for {year}/{month}/{day}: Filtering areas under 0.4 ha.")    
+                                    FilterPolyArea (resultsPoly, 4000)
+                                    
+                                    ## Only keep polygons which contain a NBR_masked high intensity seed (<= -0.05)
+                                    
+                                    print(f"___ for {year}/{month}/{day}: Discarding polygons without high intensity seeds.")
+                                    seedintersection (NBR_masked, resultsPoly, 1.0)
+                                    
+                                    ras_ds = gdal.Open(NBR_masked) 
+                                    vec_ds = ogr.Open(resultsPoly) 
+                                    lyr = vec_ds.GetLayer() 
+                                    geot = ras_ds.GetGeoTransform() 
+                                    drv_tiff = gdal.GetDriverByName("GTiff") 
+                                    chn_ras_ds = drv_tiff.Create(finalraster, ras_ds.RasterXSize, ras_ds.RasterYSize, 1, gdal.GDT_Float32)
+                                    chn_ras_ds.SetGeoTransform(geot)
+                                    chn_ras_ds.SetProjection(srs.ExportToWkt())
+                                    gdal.RasterizeLayer(chn_ras_ds, [1], lyr, options = ['ATTRIBUTE=DN']) 
+                                    chn_ras_ds.GetRasterBand(1).SetNoDataValue(0.0) 
+                                    chn_ras_ds.FlushCache()
+                                    chn_ras_ds = None
                                 
-                                ## Mask the results with CLC2018 PRIME2 WFD and home-made constant false alarm mask
-                                
-                                Local_mask = os.path.join(maskdir, f'{tile}_mask.shp') #path the S2 masks 
-                                NBR_masked = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}{month}{day}_NBR_masked.tif')
-                                ClipRwithS(Local_mask, NBRFILTER, NBR_masked)
-                                
-                                ## Select only areas over 0.4ha 
-                                
-                                resultsRaster = os.path.join(workplace, sensor.lower(), tile, f'{tile}_{year}{month}{day}_results.tif')
-                                if not os.path.isfile(resultsRaster): 
-                                    res = gdal.Open(NBR_masked).ReadAsArray()
-                                    dataset = gdal.Open(NBR_masked)
-                                    geotransform = dataset.GetGeoTransform()
-                                    res = res.astype('f4')
-                                    res[res == 1] = 2
-                                    ArraytoRaster(res, resultsRaster, geotransform)
-                                    dataset = None 
-                                resultsPoly = resultsRaster[:-4] + "_poly.shp" 
-                                if not os.path.isfile(resultsPoly):
-                                    resultsPoly = Polygonize (resultsRaster, resultsPoly) # This was "outPoly" in the original code, but appeared nowehere else
-                                print(f"___ for {year}/{month}/{day}: Filtering areas under 0.4 ha.")    
-                                FilterPolyArea (resultsPoly, 4000)
-                                
-                                ## Only keep polygons which contain a NBR_masked high intensity seed (<= -0.05)
-                                
-                                print(f"___ for {year}/{month}/{day}: Discarding polygons without high intensity seeds.")
-                                seedintersection (NBR_masked, resultsPoly, 1.0)
-                                
-                                ras_ds = gdal.Open(NBR_masked) 
-                                vec_ds = ogr.Open(resultsPoly) 
-                                lyr = vec_ds.GetLayer() 
-                                geot = ras_ds.GetGeoTransform() 
-                                drv_tiff = gdal.GetDriverByName("GTiff") 
-                                chn_ras_ds = drv_tiff.Create(finalraster, ras_ds.RasterXSize, ras_ds.RasterYSize, 1, gdal.GDT_Float32)
-                                chn_ras_ds.SetGeoTransform(geot)
-                                chn_ras_ds.SetProjection(srs.ExportToWkt())
-                                gdal.RasterizeLayer(chn_ras_ds, [1], lyr, options = ['ATTRIBUTE=DN']) 
-                                chn_ras_ds.GetRasterBand(1).SetNoDataValue(0.0) 
-                                chn_ras_ds.FlushCache()
-                                chn_ras_ds = None
-                            
-                                print(f"\n => {year}/{month}/{day}: burn area delineation done \n") 
-                                if not 'filtered' in datadict[tile][year][month][day][bucket].keys():
-                                    datadict[tile][year][month][day][bucket]['filtered'] = {}
-                                    for key in ['final', 'NBR', 'NDVI']:
-                                        datadict[tile][year][month][day][bucket]['filtered'][key] = []
-                                for d, f in zip(['final', 'NDVI', 'NBR'], [finalraster, NDVI, NBRFILTER]):
-                                    datadict[tile][year][month][day][bucket]['filtered'][d].append(f)
-                                if ieo.useS3 and remove:
-                                    for f in [SRfile, SRfile.replace('.dat', '.hdr')]:
-                                        print(f'Deleting input file from disk: {f}')
-                                        os.remove(f)
+                                    print(f"\n => {year}/{month}/{day}: burn area delineation done \n") 
+                                    if not 'filtered' in datadict[tile][year][month][day][bucket].keys():
+                                        datadict[tile][year][month][day][bucket]['filtered'] = {}
+                                        for key in ['final', 'NBR', 'NDVI']:
+                                            datadict[tile][year][month][day][bucket]['filtered'][key] = []
+                                    for d, f in zip(['final', 'NDVI', 'NBR'], [finalraster, NDVI, NBRFILTER]):
+                                        datadict[tile][year][month][day][bucket]['filtered'][d].append(f)
+                                    if ieo.useS3 and remove:
+                                        for f in [SRfile, SRfile.replace('.dat', '.hdr')]:
+                                            print(f'Deleting input file from disk: {f}')
+                                            os.remove(f)
                 
                 print("----------------------------------------")
                 print(f"\n {tile}/ {year}: FINAL STEP")
@@ -1477,13 +1512,21 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                     else:
                         for month in sorted(tiledict[key].keys()):
                             for day in sorted(tiledict[key][month].keys()):
-                                 S3ObjectStorage.copyfilestobucket(filelist = tiledict[key][month][day], bucket = 'wp3.1', targetdir = f'Results/Sentinel2/{tile}/{key}/{month}/{day}')
-                                 for f in tiledict[key][month][day]:
-                                    try:
-                                        print(f'Deleting from disk: {f}')
-                                        os.remove(f)
-                                    except Exception as e:
-                                        print(f'ERROR: {e}')
+                                transferfiles = True
+                                if year in wp31dldict.keys():
+                                    if month in wp31dldict[year].keys():
+                                        if day in wp31dldict[year][month].keys():
+                                            if len(wp31dldict[year][month][day]) > 0:
+                                                if any(x.endswith(f'{tile}_{year}{month}{day}_final.tif') for x in wp31dldict[year][month][day]) and any(x.endswith(f'{tile}_{year}{month}{day}_CloudFree.tif') for x in wp31dldict[year][month][day]):
+                                                    transferfiles = False
+                                if transferfiles:
+                                    S3ObjectStorage.copyfilestobucket(filelist = tiledict[key][month][day], bucket = 'wp3.1', targetdir = f'Results/Sentinel2/{tile}/{key}/{month}/{day}')
+                                for f in tiledict[key][month][day]:
+                                   try:
+                                       print(f'Deleting from disk: {f}')
+                                       os.remove(f)
+                                   except Exception as e:
+                                       print(f'ERROR: {e}')
                 flist = glob.glob(os.path.join(workplace, sensor.lower(), tile, '*.*'))
                 if len(flist) == 0:
                     print(f'Removing directory: {os.path.join(workplace, tile)}')

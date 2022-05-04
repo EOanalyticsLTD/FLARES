@@ -28,6 +28,7 @@ parser = argparse.ArgumentParser('This script batch processes FLARES_BurnScar.py
 parser.add_argument('--starttile', type = str, default = None, help = 'Starting tile')
 parser.add_argument('--endtile', type = str, default = None, help = 'Ending tile')
 parser.add_argument('--version', type = int, default = 2, help = 'Version to use. Default = 2')
+parser.add_argument('-l', '--log', action = 'store_true', help = 'Log batched processes to text files.')
 args = parser.parse_args()
 
 if args.version == 1:
@@ -82,11 +83,13 @@ for tile in tiles:
         now = datetime.datetime.now()
         print(f'{now.strftime("%Y-%m-%d %H:%M:%S")} Processing tile: {tile} ({tiles.index(tile) + 1}/{len(tiles)}), attempt {tries}/{maxtries}.')
         logfile = os.path.join(logdir, f'{tile}_{now.strftime("%Y%m%d-%H%M%S")}.txt')
-        
-        with open(logfile, 'w') as fp:
-            x = subprocess.run(['python', burnscript, '--verbose', '--remove', '--tile', tile], stdout = fp)
+        if args.log:
+            with open(logfile, 'w') as fp:
+                x = subprocess.run(['python', burnscript, '--verbose', '--remove', '--tile', tile], stdout = fp)
+        else:
+            x = subprocess.Popen(['python', burnscript, '--verbose', '--remove', '--tile', tile])
+            print(x.communicate())
         if x.returncode != 0:
-            
             if tries == maxtries:
                 print(f'ERROR: Script failure for tile {tile} returning returncode {x.returncode}. Adding to bad tile list.')
                 if not os.path.isfile(badfile):
