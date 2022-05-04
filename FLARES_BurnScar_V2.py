@@ -980,6 +980,10 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                         print(f'Tile {tile} has already been processed, skipping.')
                         tiles.pop(tiles.index(tile))
     
+    if len(tiles) == 0:
+        print('There are no tiles to process. Exiting.')
+        sys.exit()
+    
     srs = osr.SpatialReference()   
     i = ieo.prjstr.find(':') + 1              
     srs.ImportFromEPSG(int(ieo.prjstr[i:]))
@@ -1226,6 +1230,10 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                         datadict[tile][year][month][day][bucket]['filtered'][key] = []
                                 for d, f in zip(['final', 'NDVI', 'NBR'], [finalraster, NDVI, NBRFILTER]):
                                     datadict[tile][year][month][day][bucket]['filtered'][d].append(f)
+                                if ieo.useS3 and remove:
+                                    for f in [SRfile, SRfile.replace('.dat', '.hdr')]:
+                                        print(f'Deleting input file from disk: {f}')
+                                        os.remove(f)
                 
                 print("----------------------------------------")
                 print(f"\n {tile}/ {year}: FINAL STEP")
@@ -1520,7 +1528,7 @@ if __name__ == '__main__':
     parser.add_argument('--val1', type = int, default = 7, help = "val1 value, default = 7.")
     parser.add_argument('--val2', type = int, default = 8, help = "val2 value, default = 8.")
     parser.add_argument('--excludeyearlist', type = str, default = '2015,2016,2017', help = 'Comma-delimited list of years to be excluded from differential analyses. Default = "2015,2016,2017".')
-    parser.add_argument('--ignoreprocessed', action = 'store_true', help = 'Do not process tiles which have already been processed.')
+    parser.add_argument('--ignoreprocessed', type = bool, default = True, help = 'Do not process tiles which have already been processed.')
     parser.add_argument('--calccloudfree', type = bool, default = True, help = 'Save cloud-free images, default = True.')
     
     args = parser.parse_args()
