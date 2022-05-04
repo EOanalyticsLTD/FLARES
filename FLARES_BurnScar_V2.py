@@ -980,10 +980,6 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                         print(f'Tile {tile} has already been processed, skipping.')
                         tiles.pop(tiles.index(tile))
     
-    if len(tiles) == 0:
-        print('There are no tiles to process. Exiting.')
-        sys.exit()
-    
     srs = osr.SpatialReference()   
     i = ieo.prjstr.find(':') + 1              
     srs.ImportFromEPSG(int(ieo.prjstr[i:]))
@@ -1018,6 +1014,11 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                     tiles.pop(tiles.index(tile))
     # fileList = os.listdir(infilePath)
     # featuredict = ieo.getfeaturedict(tiletype = ieo.NTS) 
+    
+    if len(tiles) == 0:
+        print('There are no tiles to process. Exiting.')
+        sys.exit()
+    
     datadict = {}
     for s in sensors:
         bucket = s.lower()
@@ -1288,7 +1289,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                         if len(Max) == 0:
                                             Max = img_ds
                                         else:
-                                            Max = np.nanmin([Max, img_ds], axis = 0)
+                                            Max = np.nanmax([Max, img_ds], axis = 0)
                         
                         ## If calccloudfree = True, aggregate cloud-free image for year
                         if calccloudfree:
