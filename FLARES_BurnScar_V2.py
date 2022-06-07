@@ -891,11 +891,22 @@ def dlDailyDataFromBucket(tile, sensor, *args, **kwargs):
                     for day in days:
                         wp31tiledict[year][month][day] = S3ObjectStorage.getbucketfoldercontents(bucket, f'{prefix}{year}/{month}/{day}/', '')
                         if len(wp31tiledict[year][month][day]) > 0:
-                            for f in wp31tiledict[year][month][day]:
-                                outf = os.path.join(outdir, os.path.basename(f))
-                                if (not os.path.isfile(outf)) and (f.endswith('_CloudFree.tif') or f.endswith('_final.tif') or f.endswith('_NDVI.dat') or f.endswith('_NDVI.hdr')):
-                                    S3ObjectStorage.downloadfile(outdir, bucket, f)
+                            if any(x.endswith(f'{tile}_{year}{month}{day}_final.tif') for x in wp31tiledict[year][month][day]) and any(x.endswith(f'{tile}_{year}{month}{day}_CloudFree.tif') for x in wp31tiledict[year][month][day]):
+                                for f in wp31tiledict[year][month][day]:
+                                    outf = os.path.join(outdir, os.path.basename(f))
+                                    if (not os.path.isfile(outf)) and (f.endswith('_CloudFree.tif') or f.endswith('_final.tif') or f.endswith('_NDVI.dat') or f.endswith('_NDVI.hdr')):
+                                        S3ObjectStorage.downloadfile(outdir, bucket, f)
     return wp31tiledict
+
+def checkDictStatus(d, tile, year, month, day):
+    status = False
+    if year in d.keys():
+        if month in d[year].keys():
+            if day in d[year][month].keys():
+                if len(d[year][month][day]) > 0: 
+                    if any(x.endswith(f'{tile}_{year}{month}{day}_final.tif') for x in d[year][month][day]) and any(x.endswith(f'{tile}_{year}{month}{day}_CloudFree.tif') for x in d[year][month][day]):
+                        status = True
+    return status
                         
 def createBuffer0(inputfn, outputBufferfn):
     inputds = ogr.Open(inputfn)
@@ -922,8 +933,9 @@ def createBuffer0(inputfn, outputBufferfn):
 def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
         tile = None, sensor = 'both', useMGRS = False, verbose = False, \
         remove = False, transfer = False, nancutoff = 4, val1 = 7, val2 = 8, \
-        excludeyearlist = '2015,2016,2017', ignoreprocessed = False, calccloudfree = True):
-    
+        excludeyearlist = '2015,2016,2017', ignoreprocessed = False, calccloudfree = True, reprocess = False):
+    if reprocess:
+        ignoreprocessed = True
     excludeyearlist = excludeyearlist.split(',')
     # if len(excludeyearlist) > 0:
     #     for i in range(len(excludeyearlist)):
@@ -966,7 +978,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
     
     tfile = os.path.join(workplace, sensor.lower(), 'transferred_tiles.csv')
     processedtiles = []
-    if os.path.isfile(tfile):
+    if os.path.isfile(tfile) and not reprocess:
         with open(tfile, 'r') as lines:
             for line in lines:
                 line = line.strip().split(',')
@@ -1137,8 +1149,11 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
             tile_workplace = os.path.join(workplace, sensor.lower(), tile)
             if not os.path.isdir(tile_workplace):
                 os.makedirs(tile_workplace)
-            if verbose: print(f'Downloading any data on bucket wp3.1 for tile {tile}.')
-            wp31dldict = dlDailyDataFromBucket(tile, sensor)
+            if not ignoreprocessed:
+                if verbose: print(f'Downloading any data on bucket wp3.1 for tile {tile}.')
+                wp31dldict = dlDailyDataFromBucket(tile, sensor)
+            else:
+                wp31dldict = {}
             for year in years:
                 if verbose: print(f'Processing year {year}.')
                 for month in months:
@@ -1146,7 +1161,10 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                         if verbose: print(f'Processing month {month}.')
                         days = sorted(datadict[tile][year][month].keys())
                         for day in days:
-                            processed = False
+                            if not ignoreprocessed:
+                                processed = checkDictStatus(wp31dldict, tile, year, month, day)
+                            else:
+                                processed = False
                             if verbose: print(f'Processing day {day}.')
                             for d in ['SR']: #, 'NDVI', 'NBR']:
                                 if verbose: print(f'Processing data type: {d}.')
@@ -1178,12 +1196,12 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                         datadict[tile][year][month][day][bucket][d]['local'] = []
                                     # Check to see if remote bucket files are present on locally. If not, copy them over.
                                     
-                                    if year in wp31dldict.keys():
-                                        if month in wp31dldict[year].keys():
-                                            if day in wp31dldict[year][month].keys():
-                                                if len(wp31dldict[year][month][day]) > 0: 
-                                                    if any(x.endswith(f'{tile}_{year}{month}{day}_final.tif') for x in wp31dldict[year][month][day]) and any(x.endswith(f'{tile}_{year}{month}{day}_CloudFree.tif') for x in wp31dldict[year][month][day]):
-                                                        processed = True
+                                    # if year in wp31dldict.keys():
+                                    #     if month in wp31dldict[year].keys():
+                                    #         if day in wp31dldict[year][month].keys():
+                                    #             if len(wp31dldict[year][month][day]) > 0: 
+                                    #                 if any(x.endswith(f'{tile}_{year}{month}{day}_final.tif') for x in wp31dldict[year][month][day]) and any(x.endswith(f'{tile}_{year}{month}{day}_CloudFree.tif') for x in wp31dldict[year][month][day]):
+                                    #                     processed = True
                                     if 'remote' in datadict[tile][year][month][day][bucket][d].keys(): 
                                         for f in datadict[tile][year][month][day][bucket][d]['remote']:
                                             if d != 'SR':
@@ -1213,7 +1231,7 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                                                 S3ObjectStorage.downloadfile(srdir.replace('SR', d), bucket, dlfname)
                                                 datadict[tile][year][month][day][bucket][d]['local'].append(os.path.join(os.path.dirname(srdir), d, os.path.basename(dlfname)))
                                             SRfile = [x for x in datadict[tile][year][month][day][bucket]['SR']['local'] if x.endswith('.dat')][0]
-                                if not os.path.isfile(finalraster):   
+                                if (not os.path.isfile(finalraster)) or (not os.path.isfile(finalraster.replace('_final.tif', '_CloudFree.tif'))):   
                                     print("\n Let's start the delineation process:") 
                                     NBRFILTER, NDVI, datadict = calcFilteredNBR(SRfile, datadict, sensordict, calccloudfree = calccloudfree) 
                                     print(f"___ for {year}/{month}/{day}: NBR raster created and filtered with SWM NDVI and RGB")
@@ -1512,14 +1530,14 @@ def main(startyear = 2015, endyear = 2021, startmonth = 1, endmonth = 6, \
                     else:
                         for month in sorted(tiledict[key].keys()):
                             for day in sorted(tiledict[key][month].keys()):
-                                transferfiles = True
-                                if year in wp31dldict.keys():
-                                    if month in wp31dldict[year].keys():
-                                        if day in wp31dldict[year][month].keys():
-                                            if len(wp31dldict[year][month][day]) > 0:
-                                                if any(x.endswith(f'{tile}_{year}{month}{day}_final.tif') for x in wp31dldict[year][month][day]) and any(x.endswith(f'{tile}_{year}{month}{day}_CloudFree.tif') for x in wp31dldict[year][month][day]):
-                                                    transferfiles = False
-                                if transferfiles:
+                                # transferfiles = True
+                                # if year in wp31dldict.keys():
+                                #     if month in wp31dldict[year].keys():
+                                #         if day in wp31dldict[year][month].keys():
+                                #             if len(wp31dldict[year][month][day]) > 0:
+                                #                 if any(x.endswith(f'{tile}_{year}{month}{day}_final.tif') for x in wp31dldict[year][month][day]) and any(x.endswith(f'{tile}_{year}{month}{day}_CloudFree.tif') for x in wp31dldict[year][month][day]):
+                                #                     transferfiles = False
+                                if ignoreprocessed or (not checkDictStatus(wp31dldict, tile, year, month, day)):
                                     S3ObjectStorage.copyfilestobucket(filelist = tiledict[key][month][day], bucket = 'wp3.1', targetdir = f'Results/Sentinel2/{tile}/{key}/{month}/{day}')
                                 for f in tiledict[key][month][day]:
                                    try:
@@ -1574,6 +1592,7 @@ if __name__ == '__main__':
     parser.add_argument('--excludeyearlist', type = str, default = '2015,2016,2017', help = 'Comma-delimited list of years to be excluded from differential analyses. Default = "2015,2016,2017".')
     parser.add_argument('--ignoreprocessed', type = bool, default = True, help = 'Do not process tiles which have already been processed.')
     parser.add_argument('--calccloudfree', type = bool, default = True, help = 'Save cloud-free images, default = True.')
+    parser.add_argument('--reprocess', action = 'store_true', help = 'Reprocess all data, ignoring previous processing.')
     
     args = parser.parse_args()
  
@@ -1581,4 +1600,4 @@ if __name__ == '__main__':
     main(args.startyear, args.endyear, args.startmonth, args.endmonth, \
         args.tile, args.sensor, args.useMGRS, args.verbose, args.remove, \
         args.transfer, args.nancutoff, args.val1, args.val2, \
-        args.excludeyearlist, args.ignoreprocessed, args.calccloudfree)
+        args.excludeyearlist, args.ignoreprocessed, args.calccloudfree, args.reprocess)
